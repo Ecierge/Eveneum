@@ -1,4 +1,5 @@
-﻿using Eveneum.Advanced;
+﻿using Ecierge.Eveneum;
+using Eveneum.Advanced;
 using Eveneum.Documents;
 using Eveneum.Persistence;
 using Eveneum.Serialization;
@@ -15,6 +16,7 @@ namespace Eveneum;
 public class EventStore : IEventStore, IAdvancedEventStore
 {
     private readonly ICosmosPersistence Persistence;
+    private readonly Action<StreamId, IDictionary<string, object?>>? streamIdJsonMapping;
 
     public DeleteMode DeleteMode { get; }
     public TimeSpan StreamTimeToLiveAfterDelete { get; }
@@ -24,6 +26,15 @@ public class EventStore : IEventStore, IAdvancedEventStore
     public ISnapshotWriter? SnapshotWriter { get; }
     public SnapshotMode SnapshotMode { get; }
 
+    public EventStore(
+        CosmosClient client,
+        string database,
+        string container,
+        EventStoreOptions? options = null)
+        : this(new CosmosPersistence<EveneumDocument>(client, database, container), options)
+    {
+    }
+
     public EventStore(ICosmosPersistence persistence, EventStoreOptions? options = null)
     {
         Persistence = persistence ?? throw new ArgumentNullException(nameof(persistence));
@@ -31,6 +42,8 @@ public class EventStore : IEventStore, IAdvancedEventStore
 
         if (options.BatchSize < 1)
             throw new ArgumentOutOfRangeException(nameof(options), options.BatchSize, "BatchSize must be greater than zero.");
+
+        this.streamIdJsonMapping = options.StreamIdJsonMapping;
 
         this.DeleteMode = options.DeleteMode;
         this.StreamTimeToLiveAfterDelete = options.StreamTimeToLiveAfterDelete;
@@ -41,12 +54,17 @@ public class EventStore : IEventStore, IAdvancedEventStore
         this.SnapshotMode = options.SnapshotMode;
     }
 
+    private void ApplyStreamIdJson(StreamId streamId, IEveneumDocument doc)
+    {
+        streamIdJsonMapping?.Invoke(streamId, doc.CustomJsonProperties);
+    }
+
     public async Task Initialize(CancellationToken cancellationToken = default)
     {
         await Persistence.Initialize(cancellationToken);
     }
 
-    public Task<StreamResponse> ReadStream(string streamId, ReadStreamOptions? options = null, CancellationToken cancellationToken = default)
+    public Task<StreamResponse> ReadStream(StreamId streamId, ReadStreamOptions? options = null, CancellationToken cancellationToken = default)
     {
         options = options ?? new ReadStreamOptions();
 
@@ -64,8 +82,8 @@ public class EventStore : IEventStore, IAdvancedEventStore
             whereTerms.Add($"(x.{nameof(EveneumDocument.Version)} <= {options.ToVersion.Value} OR x.{nameof(EveneumDocument.DocumentType)} = '{nameof(DocumentType.Header)}')");
 
         var selectClause = "SELECT * FROM x";
-        var whereClause = whereTerms.Count > 0 
-            ? $"WHERE {string.Join(" AND ", whereTerms)}" 
+        var whereClause = whereTerms.Count > 0
+            ? $"WHERE {string.Join(" AND ", whereTerms)}"
             : string.Empty;
         var orderByClause = $"ORDER BY x.{nameof(EveneumDocument.SortOrder)} DESC";
 
@@ -74,12 +92,9 @@ public class EventStore : IEventStore, IAdvancedEventStore
         return ReadStream(streamId, query, maxItemCount, cancellationToken);
     }
 
-    private async Task<StreamResponse> ReadStream(string streamId, string sql, int maxItemCount, CancellationToken cancellationToken)
+    private async Task<StreamResponse> ReadStream(StreamId streamId, string sql, int maxItemCount, CancellationToken cancellationToken)
     {
-        if (streamId is null)
-            throw new ArgumentNullException(nameof(streamId));
-
-        using var iterator = this.Persistence.GetItemQueryIterator(sql, streamId, maxItemCount);
+        using var iterator = this.Persistence.GetItemQueryIterator(sql, streamId.ToPartitionKey(), maxItemCount);
 
         var documents = new List<IEveneumDocument>();
         var finishLoading = false;
@@ -118,13 +133,13 @@ public class EventStore : IEventStore, IAdvancedEventStore
         var headerDocument = documents.FirstOrDefault(x => x.DocumentType == DocumentType.Header);
 
         if (headerDocument is null)
-            throw new StreamNotFoundException(streamId, requestCharge);
+            throw new StreamNotFoundException(streamId.LogicalStreamId, requestCharge);
 
         try
         {
             var events = documents.Where(x => x.DocumentType == DocumentType.Event).Select(this.Serializer.DeserializeEvent).Reverse().ToArray();
             var metadata = this.Serializer.DeserializeObject(headerDocument.MetadataType, headerDocument.Metadata);
-            
+
             var snapshotDocument = documents.FirstOrDefault(x => x.DocumentType == DocumentType.Snapshot);
 
             Snapshot? snapshot = null;
@@ -138,23 +153,23 @@ public class EventStore : IEventStore, IAdvancedEventStore
                     if (this.SnapshotWriter is not null)
                         snapshot = await this.SnapshotWriter.ReadSnapshot(streamId, snapshot.Value.Version, cancellationToken);
                     else
-                        throw new SnapshotWriterNotFoundException(streamId, requestCharge, snapshotWriterSnapshot.SnapshotWriterType);
+                        throw new SnapshotWriterNotFoundException(streamId.LogicalStreamId, requestCharge, snapshotWriterSnapshot.SnapshotWriterType);
                 }
             }
 
-            return new StreamResponse(new Stream(streamId, headerDocument.Version, metadata, events, snapshot), false, requestCharge);
+            return new StreamResponse(new Stream(streamId.LogicalStreamId, headerDocument.Version, metadata, events, snapshot), false, requestCharge);
         }
         catch (TypeNotFoundException ex)
         {
-            throw new StreamDeserializationException(streamId, requestCharge, ex.Type, ex);
+            throw new StreamDeserializationException(streamId.LogicalStreamId, requestCharge, ex.Type, ex);
         }
         catch (JsonDeserializationException ex)
         {
-            throw new StreamDeserializationException(streamId, requestCharge, ex.Type, ex);
+            throw new StreamDeserializationException(streamId.LogicalStreamId, requestCharge, ex.Type, ex);
         }
     }
 
-    public async Task<Response> WriteToStream(string streamId, EventData[] events, ulong? expectedVersion = null, object? metadata = null, CancellationToken cancellationToken = default)
+    public async Task<Response> WriteToStream(StreamId streamId, EventData[] events, ulong? expectedVersion = null, object? metadata = null, CancellationToken cancellationToken = default)
     {
         double requestCharge = 0;
 
@@ -165,8 +180,9 @@ public class EventStore : IEventStore, IAdvancedEventStore
 
         if (!expectedVersion.HasValue)
         {
-            header = this.Serializer.JsonSerializer.CreateDocument(streamId, DocumentType.Header);
-            header.StreamId = streamId;
+            header = this.Serializer.JsonSerializer.CreateDocument(streamId.LogicalStreamId, DocumentType.Header);
+            header.StreamId = streamId.LogicalStreamId;
+            ApplyStreamIdJson(streamId, header);
         }
         else
         {
@@ -177,10 +193,10 @@ public class EventStore : IEventStore, IAdvancedEventStore
             headerETag = header.ETag;
 
             if (header.Deleted)
-                throw new StreamDeletedException(streamId, requestCharge);
+                throw new StreamDeletedException(streamId.LogicalStreamId, requestCharge);
 
             if (header.Version != expectedVersion)
-                throw new OptimisticConcurrencyException(streamId, requestCharge, expectedVersion.Value, header.Version);
+                throw new OptimisticConcurrencyException(streamId.LogicalStreamId, requestCharge, expectedVersion.Value, header.Version);
         }
 
         this.Serializer.SerializeHeaderMetadata(header, metadata);
@@ -199,7 +215,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
 
             header.Version = baseVersion + (ulong)writtenEvents;
 
-            var transaction = Persistence.CreateTransactionalBatch(streamId);
+            var transaction = Persistence.CreateTransactionalBatch(streamId.ToPartitionKey());
 
             if (isNewStream && firstBatch)
                 transaction.CreateItem(header);
@@ -207,7 +223,11 @@ public class EventStore : IEventStore, IAdvancedEventStore
                 transaction.ReplaceItem(header.Id, header, new TransactionalBatchItemRequestOptions { IfMatchEtag = headerETag });
 
             foreach (var @event in batch)
-                transaction.CreateItem(this.Serializer.SerializeEvent(@event, streamId));
+            {
+                var document = this.Serializer.SerializeEvent(@event, streamId.LogicalStreamId);
+                ApplyStreamIdJson(streamId, document);
+                transaction.CreateItem(document);
+            }
 
             using var response = await transaction.ExecuteAsync(cancellationToken);
             requestCharge += response.RequestCharge;
@@ -217,24 +237,24 @@ public class EventStore : IEventStore, IAdvancedEventStore
                 if (response.GetOperationResultAtIndex<IEveneumDocument>(0).StatusCode == System.Net.HttpStatusCode.Conflict || response.GetOperationResultAtIndex<IEveneumDocument>(0).StatusCode == System.Net.HttpStatusCode.PreconditionFailed)
                 {
                     if (isNewStream && firstBatch)
-                        throw new StreamAlreadyExistsException(streamId, requestCharge);
+                        throw new StreamAlreadyExistsException(streamId.LogicalStreamId, requestCharge);
 
                     var currentHeaderResponse = await this.ReadHeaderDocument(streamId, cancellationToken);
                     requestCharge += currentHeaderResponse.RequestCharge;
 
-                    throw new OptimisticConcurrencyException(streamId, requestCharge, baseVersion + (ulong)(writtenEvents - batch.Length), currentHeaderResponse.Document.Version);
+                    throw new OptimisticConcurrencyException(streamId.LogicalStreamId, requestCharge, baseVersion + (ulong)(writtenEvents - batch.Length), currentHeaderResponse.Document.Version);
                 }
                 else
                 {
                     for (var i = 0; i < batch.Length; i++)
                     {
                         if (response.GetOperationResultAtIndex<IEveneumDocument>(i + 1).StatusCode == System.Net.HttpStatusCode.Conflict || response.GetOperationResultAtIndex<IEveneumDocument>(i + 1).StatusCode == System.Net.HttpStatusCode.PreconditionFailed)
-                            throw new EventAlreadyExistsException(streamId, batch[i].Version, requestCharge);
+                            throw new EventAlreadyExistsException(streamId.LogicalStreamId, batch[i].Version, requestCharge);
                     }
                 }
             }
             else if (!response.IsSuccessStatusCode)
-                throw new WriteException(streamId, requestCharge, response.ErrorMessage, response.StatusCode);
+                throw new WriteException(streamId.LogicalStreamId, requestCharge, response.ErrorMessage, response.StatusCode);
 
             headerETag = response.GetOperationResultAtIndex<IEveneumDocument>(0).ETag;
             firstBatch = false;
@@ -244,7 +264,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
         return new Response(requestCharge);
     }
 
-    public async Task<DeleteResponse> DeleteStream(string streamId, ulong expectedVersion, CancellationToken cancellationToken = default)
+    public async Task<DeleteResponse> DeleteStream(StreamId streamId, ulong expectedVersion, CancellationToken cancellationToken = default)
     {
         var headerResponse = await this.ReadHeaderDocument(streamId, cancellationToken);
 
@@ -252,13 +272,13 @@ public class EventStore : IEventStore, IAdvancedEventStore
         var requestCharge = headerResponse.RequestCharge;
 
         if (existingHeader is null)
-            throw new StreamNotFoundException(streamId, requestCharge);
+            throw new StreamNotFoundException(streamId.LogicalStreamId, requestCharge);
 
         if (existingHeader.Deleted)
-            throw new StreamDeletedException(streamId, requestCharge);
+            throw new StreamDeletedException(streamId.LogicalStreamId, requestCharge);
 
         if (existingHeader.Version != expectedVersion)
-            throw new OptimisticConcurrencyException(streamId, requestCharge, expectedVersion, existingHeader.Version);
+            throw new OptimisticConcurrencyException(streamId.LogicalStreamId, requestCharge, expectedVersion, existingHeader.Version);
 
         var query = $"SELECT * FROM c";
 
@@ -274,7 +294,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
         return new DeleteResponse(deleteResponse.DeletedDocuments, requestCharge + deleteResponse.RequestCharge);
     }
 
-    public async Task<Response> CreateSnapshot(string streamId, ulong version, object snapshot, object? metadata = null, bool deleteOlderSnapshots = false, CancellationToken cancellationToken = default)
+    public async Task<Response> CreateSnapshot(StreamId streamId, ulong version, object snapshot, object? metadata = null, bool deleteOlderSnapshots = false, CancellationToken cancellationToken = default)
     {
         var headerResponse = await this.ReadHeaderDocument(streamId, cancellationToken);
 
@@ -282,13 +302,13 @@ public class EventStore : IEventStore, IAdvancedEventStore
         var requestCharge = headerResponse.RequestCharge;
 
         if (header is null)
-            throw new StreamNotFoundException(streamId, requestCharge);
+            throw new StreamNotFoundException(streamId.LogicalStreamId, requestCharge);
 
         if (header.Deleted)
-            throw new StreamDeletedException(streamId, requestCharge);
+            throw new StreamDeletedException(streamId.LogicalStreamId, requestCharge);
 
         if (header.Version < version)
-            throw new OptimisticConcurrencyException(streamId, requestCharge, version, header.Version);
+            throw new OptimisticConcurrencyException(streamId.LogicalStreamId, requestCharge, version, header.Version);
 
         IEveneumDocument document;
 
@@ -297,14 +317,16 @@ public class EventStore : IEventStore, IAdvancedEventStore
             var snapshotWriterType = snapshotWriter.GetType();
             var snapshotWriterTypeName = snapshotWriterType.AssemblyQualifiedName ?? throw new InvalidOperationException($"Snapshot writer type '{snapshotWriterType}' has no assembly-qualified name.");
 
-            document = this.Serializer.SerializeSnapshot(new SnapshotWriterSnapshot(snapshotWriterTypeName), null, version, streamId, this.SnapshotMode);
+            document = this.Serializer.SerializeSnapshot(new SnapshotWriterSnapshot(snapshotWriterTypeName), null, version, streamId.LogicalStreamId, this.SnapshotMode);
         }
         else
         {
-            document = this.Serializer.SerializeSnapshot(snapshot ?? throw new ArgumentNullException(nameof(snapshot)), metadata, version, streamId, this.SnapshotMode);
+            document = this.Serializer.SerializeSnapshot(snapshot ?? throw new ArgumentNullException(nameof(snapshot)), metadata, version, streamId.LogicalStreamId, this.SnapshotMode);
         }
 
-        var response = await Persistence.UpsertItemAsync(document, streamId, cancellationToken);
+        ApplyStreamIdJson(streamId, document);
+
+        var response = await Persistence.UpsertItemAsync(document, streamId.ToPartitionKey(), cancellationToken);
 
         requestCharge += response.RequestCharge;
 
@@ -318,7 +340,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
         return new Response(requestCharge);
     }
 
-    public async Task<DeleteResponse> DeleteSnapshots(string streamId, ulong olderThanVersion, CancellationToken cancellationToken = default)
+    public async Task<DeleteResponse> DeleteSnapshots(StreamId streamId, ulong olderThanVersion, CancellationToken cancellationToken = default)
     {
         var query = $"SELECT * FROM c WHERE c.{nameof(EveneumDocument.DocumentType)} = 'Snapshot' AND c.Version < {olderThanVersion}";
 
@@ -345,14 +367,17 @@ public class EventStore : IEventStore, IAdvancedEventStore
     public Task<Response> LoadStreamHeaders(QueryDefinition query, Func<IReadOnlyCollection<StreamHeader>, Task> callback, CancellationToken cancellationToken = default)
         => LoadDocuments(query, response => callback(response.Where(x => x.DocumentType == DocumentType.Header).Select(x => new StreamHeader(x.StreamId, x.Version, this.Serializer.DeserializeObject(x.MetadataType, x.Metadata), x.Deleted)).ToList()), cancellationToken);
 
-    public async Task<Response> ReplaceEvent(EventData newEvent, CancellationToken cancellationToken = default)
+    public async Task<Response> ReplaceEvent(StreamId streamId, EventData newEvent, CancellationToken cancellationToken = default)
     {
         try
         {
+            var document = this.Serializer.SerializeEvent(newEvent, newEvent.StreamId);
+            ApplyStreamIdJson(streamId, document);
+
             var response = await Persistence.ReplaceItemAsync(
-                this.Serializer.SerializeEvent(newEvent, newEvent.StreamId), 
-                EveneumDocumentSerializer.GenerateEventId(newEvent.StreamId, newEvent.Version), 
-                newEvent.StreamId, 
+                document,
+                EveneumDocumentSerializer.GenerateEventId(newEvent.StreamId, newEvent.Version),
+                streamId.ToPartitionKey(),
                 cancellationToken);
 
             return new Response(response.RequestCharge);
@@ -363,18 +388,18 @@ public class EventStore : IEventStore, IAdvancedEventStore
         }
     }
 
-    public async Task<DeleteResponse> DeleteEvent(string streamId, ulong version, CancellationToken cancellationToken = default)
+    public async Task<DeleteResponse> DeleteEvent(StreamId streamId, ulong version, CancellationToken cancellationToken = default)
     {
         var query = $"SELECT * FROM c WHERE c.{nameof(EveneumDocument.DocumentType)} = 'Event' AND c.Version = {version}";
 
         return await DeleteDocuments(streamId, query, cancellationToken);
     }
 
-    public async Task<StreamHeaderResponse> ReadHeader(string streamId, CancellationToken cancellationToken = default)
+    public async Task<StreamHeaderResponse> ReadHeader(StreamId streamId, CancellationToken cancellationToken = default)
     {
         var result = await this.ReadHeaderDocument(streamId, cancellationToken);
 
-        return new StreamHeaderResponse(new StreamHeader(streamId, result.Document.Version, this.Serializer.DeserializeObject(result.Document.MetadataType, result.Document.Metadata), result.Document.Deleted), result.RequestCharge);
+        return new StreamHeaderResponse(new StreamHeader(streamId.LogicalStreamId, result.Document.Version, this.Serializer.DeserializeObject(result.Document.MetadataType, result.Document.Metadata), result.Document.Deleted), result.RequestCharge);
     }
 
     private async Task<Response> LoadDocuments(QueryDefinition query, Func<IEnumerable<IEveneumDocument>, Task> callback, CancellationToken cancellationToken = default)
@@ -401,21 +426,21 @@ public class EventStore : IEventStore, IAdvancedEventStore
         return new Response(requestCharge);
     }
 
-    private async Task<DocumentResponse> ReadHeaderDocument(string streamId, CancellationToken cancellationToken = default)
+    private async Task<DocumentResponse> ReadHeaderDocument(StreamId streamId, CancellationToken cancellationToken = default)
     {
         try
         {
-            var result = await this.Persistence.ReadItemAsync(streamId, streamId, cancellationToken);
+            var result = await this.Persistence.ReadItemAsync(streamId.LogicalStreamId, streamId.ToPartitionKey(), cancellationToken);
 
             return new DocumentResponse(result.Resource, result.RequestCharge);
         }
         catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
-            throw new StreamNotFoundException(streamId, ex.RequestCharge, ex);
+            throw new StreamNotFoundException(streamId.LogicalStreamId, ex.RequestCharge, ex);
         }
     }
 
-    private async Task<DeleteResponse> DeleteDocuments(string streamId, string query, CancellationToken cancellationToken)
+    private async Task<DeleteResponse> DeleteDocuments(StreamId streamId, string query, CancellationToken cancellationToken)
     {
         var headerResponse = await this.ReadHeader(streamId, cancellationToken);
 

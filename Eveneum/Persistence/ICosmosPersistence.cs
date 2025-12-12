@@ -1,3 +1,4 @@
+using Ecierge.Eveneum;
 using Eveneum.Documents;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Cosmos.Scripts;
@@ -20,7 +21,7 @@ public interface ICosmosPersistence
     /// <summary>
     /// Query documents with a string-based SQL query.
     /// </summary>
-    ICosmosFeedIterator<IEveneumDocument> GetItemQueryIterator(string queryText, string partitionKey, int? maxItemCount = null);
+    ICosmosFeedIterator<IEveneumDocument> GetItemQueryIterator(string queryText, PartitionKey partitionKey, int? maxItemCount = null);
 
     /// <summary>
     /// Query documents with a QueryDefinition.
@@ -32,20 +33,20 @@ public interface ICosmosPersistence
     /// </summary>
     Task<CosmosItemResponse<IEveneumDocument>> ReadItemAsync(
         string id,
-        string partitionKey,
+        PartitionKey partitionKey,
         CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Create a transactional batch for atomic operations.
     /// </summary>
-    TransactionalBatch CreateTransactionalBatch(string partitionKey);
+    TransactionalBatch CreateTransactionalBatch(PartitionKey partitionKey);
 
     /// <summary>
     /// Upsert (insert or replace) a document.
     /// </summary>
     Task<CosmosItemResponse<IEveneumDocument?>> UpsertItemAsync(
         IEveneumDocument document,
-        string partitionKey,
+        PartitionKey partitionKey,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -54,7 +55,7 @@ public interface ICosmosPersistence
     Task<CosmosItemResponse<IEveneumDocument?>> ReplaceItemAsync(
         IEveneumDocument document,
         string id,
-        string partitionKey,
+        PartitionKey partitionKey,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -64,7 +65,7 @@ public interface ICosmosPersistence
     /// When soft deletion is disabled, the TTL value may be ignored by the implementation.
     /// </remarks>
     Task<DeleteResponse> DeleteItems(
-        string streamId, 
+        StreamId streamId,
         string query, 
         bool softDelete, 
         int? ttl, 
@@ -77,7 +78,7 @@ public interface ICosmosPersistence
     /// </summary>
     Task<StoredProcedureExecuteResponse<T>> ExecuteStoredProcedureAsync<T>(
         string storedProcedureId,
-        string partitionKey,
+        PartitionKey partitionKey,
         object?[] parameters,
         CancellationToken cancellationToken = default);
 

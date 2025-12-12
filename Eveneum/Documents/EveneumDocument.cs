@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using Eveneum.Serialization;
 
@@ -33,6 +34,8 @@ public interface IEveneumDocument
     string? Timestamp { get; set; }
 
     int? TimeToLive { get; set; }
+
+    Dictionary<string, object?> CustomJsonProperties { get; }
 }
 
 public class EveneumDocument(string id, DocumentType documentType) : IEveneumDocument
@@ -80,6 +83,9 @@ public class EveneumDocument(string id, DocumentType documentType) : IEveneumDoc
     [JsonPropertyName("ttl")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? TimeToLive { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, object?> CustomJsonProperties { get; set; } = new();
 
     public static decimal GetOrderingFraction(DocumentType documentType) => documentType switch
     {

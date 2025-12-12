@@ -1,5 +1,7 @@
-﻿using Eveneum.Serialization;
-using System;
+﻿using System;
+using System.Collections.Generic;
+using Ecierge.Eveneum;
+using Eveneum.Serialization;
 using Eveneum.Snapshots;
 
 namespace Eveneum;
@@ -18,4 +20,6 @@ public class EventStoreOptions
 
     public ISnapshotWriter? SnapshotWriter { get; set; }
     public SnapshotMode SnapshotMode { get; set; } = SnapshotMode.Multiple;
+
+    public Action<StreamId, IDictionary<string, object?>>? StreamIdJsonMapping { get; set; }
 }

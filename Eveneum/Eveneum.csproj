@@ -1,9 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <WarningsAsErrors>nullable</WarningsAsErrors>
   </PropertyGroup>
@@ -12,11 +11,10 @@
     <None Remove="StoredProcedures\BulkDelete.js" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="StoredProcedures\BulkDelete.js" />
+    <EmbeddedResource Include="StoredProcedures\BulkDelete.js" LogicalName="Eveneum.StoredProcedures.BulkDelete.js" />
   </ItemGroup>
-  
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Azure.Cosmos" />
-    <PackageReference Include="System.Text.Json" />
   </ItemGroup>
 </Project>

@@ -76,7 +76,7 @@ public class EveneumDocumentSerializer(IJsonSerializer? jsonSerializer = null, I
             return null;
 
         var type = this.TypeProvider.GetTypeForIdentifier(typeName);
-        
+
         if (type is null)
         {
             if (ignoreMissingTypes)
