@@ -64,7 +64,7 @@ namespace Eveneum.Serialization
             return document;
         }
 
-        internal EveneumDocument SerializeSnapshot(object snapshot, object metadata, ulong version, string streamId, SnapshotMode snapshotMode)
+        internal EveneumDocument SerializeSnapshot(object snapshot, object? metadata, ulong version, string streamId, SnapshotMode snapshotMode)
         {
             var document = new EveneumDocument(GenerateSnapshotId(snapshotMode, streamId, version), DocumentType.Snapshot)
             {
@@ -89,7 +89,7 @@ namespace Eveneum.Serialization
                 return null;
 
             var type = this.TypeProvider.GetTypeForIdentifier(typeName);
-            
+
             if (type is null)
             {
                 if (this.IgnoreMissingTypes)

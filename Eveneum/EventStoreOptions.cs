@@ -1,7 +1,9 @@
-﻿using Newtonsoft.Json;
+﻿using System;
+using System.Collections.Generic;
+using Ecierge.Eveneum;
 using Eveneum.Serialization;
-using System;
 using Eveneum.Snapshots;
+using Newtonsoft.Json;
 
 namespace Eveneum
 {
@@ -19,5 +21,7 @@ namespace Eveneum
 
         public ISnapshotWriter SnapshotWriter { get; set; }
         public SnapshotMode SnapshotMode { get; set; } = SnapshotMode.Multiple;
+
+        public Action<StreamId, IDictionary<string, string>>? StreamIdJsonMapping { get; set; }
     }
 }

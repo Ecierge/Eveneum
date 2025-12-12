@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Linq;
@@ -55,6 +56,8 @@ namespace Eveneum.Documents
         [JsonProperty(PropertyName = "ttl", NullValueHandling = NullValueHandling.Ignore)]
         public int? TimeToLive { get; set; }
 
+        [JsonExtensionData]
+        public Dictionary<string, string> CustomJsonProperties { get; set; } = new();
         internal static decimal GetOrderingFraction(DocumentType documentType)
         {
             switch(documentType)
