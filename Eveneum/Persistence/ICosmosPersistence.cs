@@ -21,17 +21,17 @@ public interface ICosmosPersistence
     /// <summary>
     /// Query documents with a string-based SQL query.
     /// </summary>
-    ICosmosFeedIterator<IEveneumDocument> GetItemQueryIterator(string queryText, PartitionKey partitionKey, int? maxItemCount = null);
+    ICosmosFeedIterator<EveneumDocument> GetItemQueryIterator(string queryText, PartitionKey partitionKey, int? maxItemCount = null);
 
     /// <summary>
     /// Query documents with a QueryDefinition.
     /// </summary>
-    ICosmosFeedIterator<IEveneumDocument> GetItemQueryIterator(QueryDefinition queryDefinition, int? maxItemCount = null);
+    ICosmosFeedIterator<EveneumDocument> GetItemQueryIterator(QueryDefinition queryDefinition, int? maxItemCount = null);
 
     /// <summary>
     /// Read a single document by id and partition key.
     /// </summary>
-    Task<CosmosItemResponse<IEveneumDocument>> ReadItemAsync(
+    Task<CosmosItemResponse<EveneumDocument>> ReadItemAsync(
         string id,
         PartitionKey partitionKey,
         CancellationToken cancellationToken = default);
@@ -44,16 +44,16 @@ public interface ICosmosPersistence
     /// <summary>
     /// Upsert (insert or replace) a document.
     /// </summary>
-    Task<CosmosItemResponse<IEveneumDocument?>> UpsertItemAsync(
-        IEveneumDocument document,
+    Task<CosmosItemResponse<EveneumDocument?>> UpsertItemAsync(
+        EveneumDocument document,
         PartitionKey partitionKey,
         CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Replace an existing document.
     /// </summary>
-    Task<CosmosItemResponse<IEveneumDocument?>> ReplaceItemAsync(
-        IEveneumDocument document,
+    Task<CosmosItemResponse<EveneumDocument?>> ReplaceItemAsync(
+        EveneumDocument document,
         string id,
         PartitionKey partitionKey,
         CancellationToken cancellationToken = default);

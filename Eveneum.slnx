@@ -10,7 +10,6 @@
     <File Path="README.md" />
   </Folder>
   <Project Path="Eveneum.ApplicationInsights/Eveneum.ApplicationInsights.csproj" />
-  <Project Path="Eveneum.NewtonsoftJson/Eveneum.NewtonsoftJson.csproj" />
   <Project Path="Eveneum.Tests/Eveneum.Tests.csproj" />
   <Project Path="Eveneum/Eveneum.csproj" />
 </Solution>

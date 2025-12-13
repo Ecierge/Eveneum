@@ -49,11 +49,11 @@ public class StreamHeaderResponse : Response
 
 internal class DocumentResponse : Response
 {
-    public DocumentResponse(IEveneumDocument document, double requestCharge)
+    public DocumentResponse(EveneumDocument document, double requestCharge)
         : base(requestCharge)
     {
         this.Document = document;
     }
 
-    public IEveneumDocument Document { get; }
+    public EveneumDocument Document { get; }
 }

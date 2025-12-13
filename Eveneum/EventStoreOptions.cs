@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Ecierge.Eveneum;
 using Eveneum.Serialization;
 using Eveneum.Snapshots;
+using System.Text.Json;
 
 namespace Eveneum;
 
@@ -11,7 +12,7 @@ public class EventStoreOptions
     public DeleteMode DeleteMode { get; set; } = DeleteMode.SoftDelete;
     public byte BatchSize { get; set; } = 100;
     public int QueryMaxItemCount { get; set; } = 1000;
-    public IJsonSerializer? JsonSerializer { get; set; }
+    public JsonSerializerOptions JsonSerializerOptions { get; set; } = new JsonSerializerOptions();
     public ITypeProvider? TypeProvider { get; set; }
     public bool IgnoreMissingTypes { get; set; } = false;
 

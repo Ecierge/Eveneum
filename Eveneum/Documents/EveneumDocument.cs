@@ -1,84 +1,43 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Text.Json.Serialization;
-using Eveneum.Serialization;
 
 namespace Eveneum.Documents;
 
 public enum DocumentType { Header = 1, Event, Snapshot }
 
-public interface IEveneumDocument
-{
-    string Id { get; set; }
-
-    DocumentType DocumentType { get; }
-
-    string StreamId { get; set; }
-
-    ulong Version { get; set; }
-
-    string? MetadataType { get; set; }
-
-    object? Metadata { get; set; }
-
-    string? BodyType { get; set; }
-
-    object? Body { get; set; }
-
-    decimal SortOrder { get; }
-
-    bool Deleted { get; set; }
-
-    string? ETag { get; set; }
-
-    string? Timestamp { get; set; }
-
-    int? TimeToLive { get; set; }
-
-    Dictionary<string, object?> CustomJsonProperties { get; }
-}
-
-public class EveneumDocument(string id, DocumentType documentType) : IEveneumDocument
+public class EveneumDocument(string id, DocumentType documentType)
 {
     [JsonPropertyName("id")]
     public string Id { get; set;  } = id;
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
-    [JsonPropertyName("DocumentType")]
     public DocumentType DocumentType { get; set; } = documentType;
 
-    [JsonPropertyName("StreamId")]
     public string StreamId { get; set; } = null!;
 
-    [JsonPropertyName("Version")]
     public ulong Version { get; set; }
 
-    [JsonPropertyName("MetadataType")]
     public string? MetadataType { get; set; }
 
-    [JsonConverter(typeof(JsonNodeObjectConverter))]
-    [JsonPropertyName("Metadata")]
-    public object? Metadata { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public JsonElement Metadata { get; set; }
 
-    [JsonPropertyName("BodyType")]
     public string? BodyType { get; set; }
 
-    [JsonConverter(typeof(JsonNodeObjectConverter))]
-    [JsonPropertyName("Body")]
-    public object? Body { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public JsonElement Body { get; set; }
 
-    [JsonPropertyName("SortOrder")]
     public decimal SortOrder => this.Version + GetOrderingFraction(this.DocumentType);
 
-    [JsonPropertyName("Deleted")]
     public bool Deleted { get; set; }
 
     [JsonPropertyName("_etag")]
     public string? ETag { get; set; }
 
-    [JsonConverter(typeof(CosmosTimestampConverter))]
     [JsonPropertyName("_ts")]
-    public string? Timestamp { get; set; }
+    public long Timestamp { get; set; }
 
     [JsonPropertyName("ttl")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

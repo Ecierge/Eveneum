@@ -50,7 +50,16 @@
             var isAccepted = true;
 
             if (softDelete) {
-                documents[0].Deleted = true;
+                var hasPascal = documents[0].Deleted !== undefined;
+                var hasSnake = documents[0].deleted !== undefined;
+
+                if (hasPascal) {
+                    documents[0].Deleted = true;
+                }
+
+                if (hasSnake) {
+                    documents[0].deleted = true;
+                }
 
                 if (ttl > 0) {
                     documents[0].ttl = ttl;

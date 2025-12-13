@@ -8,6 +8,8 @@ using Microsoft.Azure.Cosmos;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -31,7 +33,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
         string database,
         string container,
         EventStoreOptions? options = null)
-        : this(new CosmosPersistence<EveneumDocument>(client, database, container), options)
+        : this(new CosmosPersistence(client, database, container), options)
     {
     }
 
@@ -49,12 +51,26 @@ public class EventStore : IEventStore, IAdvancedEventStore
         this.StreamTimeToLiveAfterDelete = options.StreamTimeToLiveAfterDelete;
         this.BatchSize = Math.Min(options.BatchSize, (byte)100); // Maximum batch size supported by CosmosDB
         this.QueryMaxItemCount = options.QueryMaxItemCount;
-        this.Serializer = new EveneumDocumentSerializer(options.JsonSerializer, options.TypeProvider, options.IgnoreMissingTypes);
+        this.Serializer = new EveneumDocumentSerializer(options.JsonSerializerOptions, options.TypeProvider, options.IgnoreMissingTypes);
         this.SnapshotWriter = options.SnapshotWriter;
         this.SnapshotMode = options.SnapshotMode;
     }
 
-    private void ApplyStreamIdJson(StreamId streamId, IEveneumDocument doc)
+    private string GetJsonPropertyName(string clrName)
+    {
+        var prop = typeof(EveneumDocument).GetProperty(clrName);
+        if (prop != null)
+        {
+            var attr = prop.GetCustomAttribute<JsonPropertyNameAttribute>();
+            if (attr != null)
+                return attr.Name;
+        }
+
+        var policy = Serializer.JsonSerializerOptions.PropertyNamingPolicy;
+        return policy?.ConvertName(clrName) ?? clrName;
+    }
+
+    private void ApplyStreamIdJson(StreamId streamId, EveneumDocument doc)
     {
         streamIdJsonMapping?.Invoke(streamId, doc.CustomJsonProperties);
     }
@@ -69,23 +85,25 @@ public class EventStore : IEventStore, IAdvancedEventStore
         options = options ?? new ReadStreamOptions();
 
         var maxItemCount = options.MaxItemCount ?? QueryMaxItemCount;
+        var documentType = GetJsonPropertyName(nameof(EveneumDocument.DocumentType));
+        var documentVersion = GetJsonPropertyName(nameof(EveneumDocument.Version));
 
         var whereTerms = new List<string>();
 
         if (options.IgnoreSnapshots)
-            whereTerms.Add($"x.{nameof(EveneumDocument.DocumentType)} <> '{nameof(DocumentType.Snapshot)}'");
+            whereTerms.Add($"x.{documentType} <> '{nameof(DocumentType.Snapshot)}'");
 
         if (options.FromVersion.HasValue)
-            whereTerms.Add($"(x.{nameof(EveneumDocument.Version)} >= {options.FromVersion.Value} OR x.{nameof(EveneumDocument.DocumentType)} = '{nameof(DocumentType.Header)}')");
+            whereTerms.Add($"(x.{documentVersion} >= {options.FromVersion.Value} OR x.{documentType} = '{nameof(DocumentType.Header)}')");
 
         if (options.ToVersion.HasValue)
-            whereTerms.Add($"(x.{nameof(EveneumDocument.Version)} <= {options.ToVersion.Value} OR x.{nameof(EveneumDocument.DocumentType)} = '{nameof(DocumentType.Header)}')");
+            whereTerms.Add($"(x.{documentVersion} <= {options.ToVersion.Value} OR x.{documentType} = '{nameof(DocumentType.Header)}')");
 
         var selectClause = "SELECT * FROM x";
         var whereClause = whereTerms.Count > 0
             ? $"WHERE {string.Join(" AND ", whereTerms)}"
             : string.Empty;
-        var orderByClause = $"ORDER BY x.{nameof(EveneumDocument.SortOrder)} DESC";
+        var orderByClause = $"ORDER BY x.{GetJsonPropertyName(nameof(EveneumDocument.SortOrder))} DESC";
 
         var query = $"{selectClause} {whereClause} {orderByClause}";
 
@@ -96,7 +114,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
     {
         using var iterator = this.Persistence.GetItemQueryIterator(sql, streamId.ToPartitionKey(), maxItemCount);
 
-        var documents = new List<IEveneumDocument>();
+        var documents = new List<EveneumDocument>();
         var finishLoading = false;
         double requestCharge = 0;
 
@@ -175,13 +193,12 @@ public class EventStore : IEventStore, IAdvancedEventStore
 
         var isNewStream = !expectedVersion.HasValue;
 
-        IEveneumDocument header;
+        EveneumDocument header;
         string? headerETag = null;
 
         if (!expectedVersion.HasValue)
         {
-            header = this.Serializer.JsonSerializer.CreateDocument(streamId.LogicalStreamId, DocumentType.Header);
-            header.StreamId = streamId.LogicalStreamId;
+            header = new EveneumDocument(streamId.LogicalStreamId, DocumentType.Header) { StreamId = streamId.LogicalStreamId };
             ApplyStreamIdJson(streamId, header);
         }
         else
@@ -234,7 +251,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
 
             if (response.StatusCode == System.Net.HttpStatusCode.Conflict || response.StatusCode == System.Net.HttpStatusCode.PreconditionFailed)
             {
-                if (response.GetOperationResultAtIndex<IEveneumDocument>(0).StatusCode == System.Net.HttpStatusCode.Conflict || response.GetOperationResultAtIndex<IEveneumDocument>(0).StatusCode == System.Net.HttpStatusCode.PreconditionFailed)
+                if (response.GetOperationResultAtIndex<EveneumDocument>(0).StatusCode == System.Net.HttpStatusCode.Conflict || response.GetOperationResultAtIndex<EveneumDocument>(0).StatusCode == System.Net.HttpStatusCode.PreconditionFailed)
                 {
                     if (isNewStream && firstBatch)
                         throw new StreamAlreadyExistsException(streamId.LogicalStreamId, requestCharge);
@@ -248,7 +265,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
                 {
                     for (var i = 0; i < batch.Length; i++)
                     {
-                        if (response.GetOperationResultAtIndex<IEveneumDocument>(i + 1).StatusCode == System.Net.HttpStatusCode.Conflict || response.GetOperationResultAtIndex<IEveneumDocument>(i + 1).StatusCode == System.Net.HttpStatusCode.PreconditionFailed)
+                        if (response.GetOperationResultAtIndex<EveneumDocument>(i + 1).StatusCode == System.Net.HttpStatusCode.Conflict || response.GetOperationResultAtIndex<EveneumDocument>(i + 1).StatusCode == System.Net.HttpStatusCode.PreconditionFailed)
                             throw new EventAlreadyExistsException(streamId.LogicalStreamId, batch[i].Version, requestCharge);
                     }
                 }
@@ -256,7 +273,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
             else if (!response.IsSuccessStatusCode)
                 throw new WriteException(streamId.LogicalStreamId, requestCharge, response.ErrorMessage, response.StatusCode);
 
-            headerETag = response.GetOperationResultAtIndex<IEveneumDocument>(0).ETag;
+            headerETag = response.GetOperationResultAtIndex<EveneumDocument>(0).ETag;
             firstBatch = false;
         }
         while (offset < events.Length);
@@ -285,7 +302,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
         var useSoftDeleteMode = (this.DeleteMode == DeleteMode.SoftDelete) || (this.DeleteMode == DeleteMode.TtlDelete);
 
         if (useSoftDeleteMode)
-            query += $" WHERE c.{nameof(EveneumDocument.Deleted)} = false";
+            query += $" WHERE c.{GetJsonPropertyName(nameof(EveneumDocument.Deleted))} = false";
 
         int? ttl = this.DeleteMode == DeleteMode.TtlDelete ? (int)StreamTimeToLiveAfterDelete.TotalSeconds : null;
 
@@ -310,7 +327,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
         if (header.Version < version)
             throw new OptimisticConcurrencyException(streamId.LogicalStreamId, requestCharge, version, header.Version);
 
-        IEveneumDocument document;
+        EveneumDocument document;
 
         if (this.SnapshotWriter is { } snapshotWriter && await snapshotWriter.CreateSnapshot(streamId, version, snapshot, metadata, cancellationToken))
         {
@@ -342,7 +359,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
 
     public async Task<DeleteResponse> DeleteSnapshots(StreamId streamId, ulong olderThanVersion, CancellationToken cancellationToken = default)
     {
-        var query = $"SELECT * FROM c WHERE c.{nameof(EveneumDocument.DocumentType)} = 'Snapshot' AND c.Version < {olderThanVersion}";
+        var query = $"SELECT * FROM c WHERE c.{GetJsonPropertyName(nameof(EveneumDocument.DocumentType))} = 'Snapshot' AND c.{GetJsonPropertyName(nameof(EveneumDocument.Version))} < {olderThanVersion}";
 
         var deleteResponse = await DeleteDocuments(streamId, query, cancellationToken);
 
@@ -353,7 +370,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
     }
 
     public Task<Response> LoadAllEvents(Func<IReadOnlyCollection<EventData>, Task> callback, CancellationToken cancellationToken = default) =>
-        this.LoadEvents($"SELECT * FROM c WHERE c.{nameof(EveneumDocument.DocumentType)} = '{nameof(DocumentType.Event)}'", callback, cancellationToken);
+        this.LoadEvents($"SELECT * FROM c WHERE c.{GetJsonPropertyName(nameof(EveneumDocument.DocumentType))} = '{nameof(DocumentType.Event)}'", callback, cancellationToken);
 
     public Task<Response> LoadEvents(string query, Func<IReadOnlyCollection<EventData>, Task> callback, CancellationToken cancellationToken = default)
         => this.LoadEvents(new QueryDefinition(query), callback, cancellationToken);
@@ -390,7 +407,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
 
     public async Task<DeleteResponse> DeleteEvent(StreamId streamId, ulong version, CancellationToken cancellationToken = default)
     {
-        var query = $"SELECT * FROM c WHERE c.{nameof(EveneumDocument.DocumentType)} = 'Event' AND c.Version = {version}";
+        var query = $"SELECT * FROM c WHERE c.{GetJsonPropertyName(nameof(EveneumDocument.DocumentType))} = 'Event' AND c.{GetJsonPropertyName(nameof(EveneumDocument.Version))} = {version}";
 
         return await DeleteDocuments(streamId, query, cancellationToken);
     }
@@ -402,7 +419,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
         return new StreamHeaderResponse(new StreamHeader(streamId.LogicalStreamId, result.Document.Version, this.Serializer.DeserializeObject(result.Document.MetadataType, result.Document.Metadata), result.Document.Deleted), result.RequestCharge);
     }
 
-    private async Task<Response> LoadDocuments(QueryDefinition query, Func<IEnumerable<IEveneumDocument>, Task> callback, CancellationToken cancellationToken = default)
+    private async Task<Response> LoadDocuments(QueryDefinition query, Func<IEnumerable<EveneumDocument>, Task> callback, CancellationToken cancellationToken = default)
     {
         using var iterator = this.Persistence.GetItemQueryIterator(query, this.QueryMaxItemCount);
 
@@ -448,7 +465,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
         var useSoftDeleteMode = (this.DeleteMode == DeleteMode.SoftDelete) || (this.DeleteMode == DeleteMode.TtlDelete);
 
         if (useSoftDeleteMode)
-            query += $" AND c.{nameof(EveneumDocument.Deleted)} = false";
+            query += $" AND c.{GetJsonPropertyName(nameof(EveneumDocument.Deleted))} = false";
 
         int? ttl = this.DeleteMode == DeleteMode.TtlDelete ? (int)StreamTimeToLiveAfterDelete.TotalSeconds : null;
 

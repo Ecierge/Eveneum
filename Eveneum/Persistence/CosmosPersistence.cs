@@ -13,8 +13,7 @@ using System.Threading.Tasks;
 
 namespace Eveneum.Persistence;
 
-public class CosmosPersistence<TDocument> : ICosmosPersistence
-    where TDocument : class, IEveneumDocument
+public class CosmosPersistence : ICosmosPersistence
 {
     protected readonly Container Container;
     protected readonly BulkDeleteMode BulkDeleteMode;
@@ -75,8 +74,8 @@ public class CosmosPersistence<TDocument> : ICosmosPersistence
         }
     }
 
-    public virtual async Task<CosmosItemResponse<IEveneumDocument?>> UpsertItemAsync(
-        IEveneumDocument document,
+    public virtual async Task<CosmosItemResponse<EveneumDocument?>> UpsertItemAsync(
+        EveneumDocument document,
         PartitionKey partitionKey,
         CancellationToken cancellationToken = default)
     {
@@ -85,11 +84,11 @@ public class CosmosPersistence<TDocument> : ICosmosPersistence
             partitionKey,
             cancellationToken: cancellationToken);
 
-        return new CosmosItemResponse<IEveneumDocument?>(result.Resource, result.RequestCharge);
+        return new CosmosItemResponse<EveneumDocument?>(result.Resource, result.RequestCharge);
     }
 
-    public virtual async Task<CosmosItemResponse<IEveneumDocument?>> ReplaceItemAsync(
-        IEveneumDocument document,
+    public virtual async Task<CosmosItemResponse<EveneumDocument?>> ReplaceItemAsync(
+        EveneumDocument document,
         string id,
         PartitionKey partitionKey,
         CancellationToken cancellationToken = default)
@@ -100,7 +99,7 @@ public class CosmosPersistence<TDocument> : ICosmosPersistence
             partitionKey,
             cancellationToken: cancellationToken);
 
-        return new CosmosItemResponse<IEveneumDocument?>(result.Resource, result.RequestCharge);
+        return new CosmosItemResponse<EveneumDocument?>(result.Resource, result.RequestCharge);
     }
 
     public virtual async Task<StoredProcedureExecuteResponse<T>> ExecuteStoredProcedureAsync<T>(
@@ -121,7 +120,7 @@ public class CosmosPersistence<TDocument> : ICosmosPersistence
         return Container.CreateTransactionalBatch(partitionKey);
     }
 
-    public virtual ICosmosFeedIterator<IEveneumDocument> GetItemQueryIterator(string queryText, PartitionKey partitionKey, int? maxItemCount = null)
+    public virtual ICosmosFeedIterator<EveneumDocument> GetItemQueryIterator(string queryText, PartitionKey partitionKey, int? maxItemCount = null)
     {
         var requestOptions = new QueryRequestOptions
         {
@@ -129,27 +128,27 @@ public class CosmosPersistence<TDocument> : ICosmosPersistence
             MaxItemCount = maxItemCount
         };
 
-        return new CosmosFeedIterator<IEveneumDocument, TDocument>(Container.GetItemQueryIterator<TDocument>(queryText, requestOptions: requestOptions));
+        return new CosmosFeedIterator<EveneumDocument, EveneumDocument>(Container.GetItemQueryIterator<EveneumDocument>(queryText, requestOptions: requestOptions));
     }
 
-    public virtual ICosmosFeedIterator<IEveneumDocument> GetItemQueryIterator(QueryDefinition queryDefinition, int? maxItemCount = null)
+    public virtual ICosmosFeedIterator<EveneumDocument> GetItemQueryIterator(QueryDefinition queryDefinition, int? maxItemCount = null)
     {
         var requestOptions = new QueryRequestOptions
         {
             MaxItemCount = maxItemCount
         };
 
-        return new CosmosFeedIterator<IEveneumDocument, TDocument>(Container.GetItemQueryIterator<TDocument>(queryDefinition, requestOptions: requestOptions));
+        return new CosmosFeedIterator<EveneumDocument, EveneumDocument>(Container.GetItemQueryIterator<EveneumDocument>(queryDefinition, requestOptions: requestOptions));
     }
 
-    public virtual async Task<CosmosItemResponse<IEveneumDocument>> ReadItemAsync(string id, PartitionKey partitionKey, CancellationToken cancellationToken = default)
+    public virtual async Task<CosmosItemResponse<EveneumDocument>> ReadItemAsync(string id, PartitionKey partitionKey, CancellationToken cancellationToken = default)
     {
-        var result = await Container.ReadItemAsync<IEveneumDocument>(
+        var result = await Container.ReadItemAsync<EveneumDocument>(
             id,
             partitionKey,
             cancellationToken: cancellationToken);
 
-        return new CosmosItemResponse<IEveneumDocument>(result.Resource, result.RequestCharge);
+        return new CosmosItemResponse<EveneumDocument>(result.Resource, result.RequestCharge);
     }
 
     public Task<DeleteResponse> DeleteItems(StreamId streamId, string query, bool softDelete, int? ttl, byte batchSize, int? maxItemCount = null, CancellationToken cancellationToken = default) =>
@@ -183,7 +182,7 @@ public class CosmosPersistence<TDocument> : ICosmosPersistence
     {
         double requestCharge = 0;
         ulong deletedDocuments = 0;
-        List<IEveneumDocument> documents;
+        List<EveneumDocument> documents;
 
         do
         {
@@ -227,7 +226,7 @@ public class CosmosPersistence<TDocument> : ICosmosPersistence
 
                 for (var i = 0; i < batch.Count(); i++)
                 {
-                    var operationResult = response.GetOperationResultAtIndex<TDocument>(i);
+                    var operationResult = response.GetOperationResultAtIndex<EveneumDocument>(i);
 
                     if (operationResult.IsSuccessStatusCode)
                         deletedDocuments++;
