@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Reflection.Metadata;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Ecierge.Eveneum;
@@ -19,7 +19,7 @@ namespace Eveneum
 {
     public class EventStore : IEventStore, IAdvancedEventStore
     {
-        private readonly Action<StreamId, IDictionary<string, string>>? streamIdJsonMapping;
+        private readonly Action<StreamId, IDictionary<string, object?>>? streamIdJsonMapping;
         public readonly CosmosClient Client;
         public readonly Database Database;
         public readonly Container Container;
@@ -51,9 +51,23 @@ namespace Eveneum
             this.StreamTimeToLiveAfterDelete = options.StreamTimeToLiveAfterDelete;
             this.BatchSize = Math.Min(options.BatchSize, (byte)100); // Maximum batch size supported by CosmosDB
             this.QueryMaxItemCount = options.QueryMaxItemCount;
-            this.Serializer = new EveneumDocumentSerializer(options.JsonSerializer, options.TypeProvider, options.IgnoreMissingTypes);
+            this.Serializer = new EveneumDocumentSerializer(options.JsonSerializerOptions, options.TypeProvider, options.IgnoreMissingTypes);
             this.SnapshotWriter = options.SnapshotWriter;
             this.SnapshotMode = options.SnapshotMode;
+        }
+
+        private string GetJsonPropertyName(string clrName)
+        {
+            var prop = typeof(EveneumDocument).GetProperty(clrName);
+            if (prop != null)
+            {
+                var attr = prop.GetCustomAttribute<JsonPropertyNameAttribute>();
+                if (attr != null)
+                    return attr.Name;
+            }
+
+            var policy = Serializer.JsonSerializerOptions.PropertyNamingPolicy;
+            return policy?.ConvertName(clrName) ?? clrName;
         }
 
         private void ApplyStreamIdJson(StreamId streamId, EveneumDocument doc)
@@ -78,23 +92,25 @@ namespace Eveneum
             options = options ?? new ReadStreamOptions();
 
             var maxItemCount = options.MaxItemCount ?? QueryMaxItemCount;
+            var documentType = GetJsonPropertyName(nameof(EveneumDocument.DocumentType));
+            var documentVersion = GetJsonPropertyName(nameof(EveneumDocument.Version));
 
             var whereTerms = new List<string>();
 
             if (options.IgnoreSnapshots)
-                whereTerms.Add($"x.{nameof(EveneumDocument.DocumentType)} <> '{nameof(DocumentType.Snapshot)}'");
+                whereTerms.Add($"x.{documentType} <> '{nameof(DocumentType.Snapshot)}'");
 
             if (options.FromVersion.HasValue)
-                whereTerms.Add($"(x.{nameof(EveneumDocument.Version)} >= {options.FromVersion.Value} OR x.{nameof(EveneumDocument.DocumentType)} = '{nameof(DocumentType.Header)}')");
+                whereTerms.Add($"(x.{documentVersion} >= {options.FromVersion.Value} OR x.{documentType} = '{nameof(DocumentType.Header)}')");
 
             if (options.ToVersion.HasValue)
-                whereTerms.Add($"(x.{nameof(EveneumDocument.Version)} <= {options.ToVersion.Value} OR x.{nameof(EveneumDocument.DocumentType)} = '{nameof(DocumentType.Header)}')");
+                whereTerms.Add($"(x.{documentVersion} <= {options.ToVersion.Value} OR x.{documentType} = '{nameof(DocumentType.Header)}')");
 
             var selectClause = "SELECT * FROM x";
             var whereClause = whereTerms.Count > 0
                 ? $"WHERE {string.Join(" AND ", whereTerms)}"
                 : string.Empty;
-            var orderByClause = $"ORDER BY x.{nameof(EveneumDocument.SortOrder)} DESC";
+            var orderByClause = $"ORDER BY x.{GetJsonPropertyName(nameof(EveneumDocument.SortOrder))} DESC";
 
             var query = $"{selectClause} {whereClause} {orderByClause}";
 
@@ -172,10 +188,7 @@ namespace Eveneum
 
         public async Task<Response> WriteToStream(StreamId streamId, EventData[] events, ulong? expectedVersion = null, object? metadata = null, CancellationToken cancellationToken = default)
         {
-            var rca = await this.Container.ReadContainerAsync();
-            var pkPath = rca.Resource.PartitionKeyPaths;
-            var pk = streamId.ToPartitionKey();
-            var transaction = this.Container.CreateTransactionalBatch(pk);
+            var transaction = this.Container.CreateTransactionalBatch(streamId.ToPartitionKey());
             double requestCharge = 0;
 
             // Existing stream
@@ -195,7 +208,6 @@ namespace Eveneum
                 header.Version += (ulong)events.Length;
 
                 this.Serializer.SerializeHeaderMetadata(header, metadata);
-
                 transaction.ReplaceItem(header.Id, header, new TransactionalBatchItemRequestOptions { IfMatchEtag = header.ETag });
             }
             else
@@ -211,12 +223,6 @@ namespace Eveneum
             foreach (var document in firstBatch)
             {
                 ApplyStreamIdJson(streamId, document);
-                //var jsonDebug = System.Text.Json.JsonSerializer.Serialize(
-                //    document,
-                //    new System.Text.Json.JsonSerializerOptions
-                //    {
-                //        WriteIndented = true
-                //    });
                 transaction.CreateItem(document);
             }
 
@@ -295,7 +301,7 @@ namespace Eveneum
             var useSoftDeleteMode = (this.DeleteMode == DeleteMode.SoftDelete) || (this.DeleteMode == DeleteMode.TtlDelete);
 
             if (useSoftDeleteMode)
-                query += " WHERE c.Deleted = false";
+                query += $" WHERE c.{GetJsonPropertyName(nameof(EveneumDocument.Deleted))} = false";
 
             do
             {
@@ -356,10 +362,10 @@ namespace Eveneum
             var requestCharge = headerResponse.RequestCharge;
             ulong deletedSnapshots = 0;
             StoredProcedureExecuteResponse<BulkDeleteResponse> response;
-            var query = $"SELECT * FROM c WHERE c.DocumentType = 'Snapshot' AND c.Version < {olderThanVersion}";
+            var query = $"SELECT * FROM c WHERE c.{GetJsonPropertyName(nameof(EveneumDocument.DocumentType))} = 'Snapshot' AND c.{GetJsonPropertyName(nameof(EveneumDocument.Version))} < {olderThanVersion}";
 
             if (this.DeleteMode == DeleteMode.SoftDelete)
-                query += " and c.Deleted = false";
+                query += $" and c.{GetJsonPropertyName(nameof(EveneumDocument.Deleted))} = false";
 
             do
             {
@@ -373,7 +379,7 @@ namespace Eveneum
         }
 
         public Task<Response> LoadAllEvents(Func<IReadOnlyCollection<EventData>, Task> callback, CancellationToken cancellationToken = default) =>
-            this.LoadEvents($"SELECT * FROM c WHERE c.{nameof(EveneumDocument.DocumentType)} = '{nameof(DocumentType.Event)}'", callback, cancellationToken);
+            this.LoadEvents($"SELECT * FROM c WHERE c.{GetJsonPropertyName(nameof(EveneumDocument.DocumentType))} = '{nameof(DocumentType.Event)}'", callback, cancellationToken);
 
         public Task<Response> LoadEvents(string query, Func<IReadOnlyCollection<EventData>, Task> callback, CancellationToken cancellationToken = default)
             => this.LoadEvents(new QueryDefinition(query), callback, cancellationToken);

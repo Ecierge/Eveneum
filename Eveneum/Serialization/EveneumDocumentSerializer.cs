@@ -1,21 +1,20 @@
 ﻿using System;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+using System.Text.Json;
 using Eveneum.Documents;
 
 namespace Eveneum.Serialization
 {
     public class EveneumDocumentSerializer
     {
-        public JsonSerializer JsonSerializer { get; }
+        public JsonSerializerOptions JsonSerializerOptions { get; }
         public ITypeProvider TypeProvider { get; }
         public bool IgnoreMissingTypes { get; }
 
         public const char Separator = '~';
 
-        public EveneumDocumentSerializer(JsonSerializer jsonSerializer = null, ITypeProvider typeProvider = null, bool ignoreMissingTypes = false)
+        public EveneumDocumentSerializer(JsonSerializerOptions jsonSerializer = null, ITypeProvider typeProvider = null, bool ignoreMissingTypes = false)
         {
-            this.JsonSerializer = jsonSerializer ?? JsonSerializer.CreateDefault();
+            this.JsonSerializerOptions = jsonSerializer ?? new JsonSerializerOptions();
             this.TypeProvider = typeProvider ?? new PlatformTypeProvider(ignoreMissingTypes);
             this.IgnoreMissingTypes = ignoreMissingTypes;
         }
@@ -24,8 +23,9 @@ namespace Eveneum.Serialization
         {
             var metadata = DeserializeObject(document.MetadataType, document.Metadata);
             var body = DeserializeObject(document.BodyType, document.Body);
+            var timestamp = DateTimeOffset.FromUnixTimeSeconds(document.Timestamp);
 
-            return new EventData(document.StreamId, body, metadata, document.Version, document.Timestamp, document.Deleted);
+            return new EventData(document.StreamId, body, metadata, document.Version, timestamp, document.Deleted);
         }
 
         public Snapshot DeserializeSnapshot(EveneumDocument document)
@@ -36,12 +36,12 @@ namespace Eveneum.Serialization
             return new Snapshot(body, metadata, document.Version);
         }
 
-        internal void SerializeHeaderMetadata(EveneumDocument header, object metadata)
+        internal void SerializeHeaderMetadata(EveneumDocument header, object? metadata)
         {
             if (metadata != null)
             {
                 header.MetadataType = this.TypeProvider.GetIdentifierForType(metadata.GetType());
-                header.Metadata = JToken.FromObject(metadata, this.JsonSerializer);
+                header.Metadata = JsonSerializer.SerializeToElement(metadata, this.JsonSerializerOptions);
             }
         }
 
@@ -52,13 +52,13 @@ namespace Eveneum.Serialization
                 StreamId = streamId,
                 Version = @event.Version,
                 BodyType = this.TypeProvider.GetIdentifierForType(@event.Body.GetType()),
-                Body = JToken.FromObject(@event.Body, this.JsonSerializer)
+                Body = JsonSerializer.SerializeToElement(@event.Body, this.JsonSerializerOptions)
             };
 
             if (@event.Metadata != null)
             {
                 document.MetadataType = this.TypeProvider.GetIdentifierForType(@event.Metadata.GetType());
-                document.Metadata = JToken.FromObject(@event.Metadata, this.JsonSerializer);
+                document.Metadata = JsonSerializer.SerializeToElement(@event.Metadata, this.JsonSerializerOptions);
             }
 
             return document;
@@ -71,19 +71,19 @@ namespace Eveneum.Serialization
                 StreamId = streamId,
                 Version = version,
                 BodyType = this.TypeProvider.GetIdentifierForType(snapshot.GetType()),
-                Body = JToken.FromObject(snapshot, this.JsonSerializer)
+                Body = JsonSerializer.SerializeToElement(snapshot, this.JsonSerializerOptions)
             };
 
             if (metadata != null)
             {
                 document.MetadataType = this.TypeProvider.GetIdentifierForType(metadata.GetType());
-                document.Metadata = JToken.FromObject(metadata, this.JsonSerializer);
+                document.Metadata = JsonSerializer.SerializeToElement(metadata, this.JsonSerializerOptions);
             }
 
             return document;
         }
 
-        internal object DeserializeObject(string typeName, JToken data)
+        internal object? DeserializeObject(string typeName, JsonElement data)
         {
             if (string.IsNullOrEmpty(typeName))
                 return null;
@@ -98,13 +98,17 @@ namespace Eveneum.Serialization
                     throw new TypeNotFoundException(typeName);
             }
 
+            if (data.ValueKind == JsonValueKind.Null || data.ValueKind == JsonValueKind.Undefined)
+                return null;
+
             try
             {
-                return data.ToObject(type, this.JsonSerializer);
+                return JsonSerializer.Deserialize(data, type, this.JsonSerializerOptions)
+               ?? throw new JsonDeserializationException(typeName, data.GetRawText(), null);
             }
             catch (Exception exc)
             {
-                throw new JsonDeserializationException(typeName, data.ToString(), exc);
+                throw new JsonDeserializationException(typeName, data.GetRawText(), exc);
             }
         }
 

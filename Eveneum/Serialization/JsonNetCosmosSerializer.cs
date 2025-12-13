@@ -1,50 +1,34 @@
-﻿using System.IO;
-using System.Text;
-using Newtonsoft.Json;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.IO;
+using System.Text.Json;
 
 namespace Eveneum.Serialization
 {
     public class JsonNetCosmosSerializer : Microsoft.Azure.Cosmos.CosmosSerializer
     {
-        private static readonly Encoding DefaultEncoding = new UTF8Encoding(false, true);
-        private readonly JsonSerializer Serializer;
+        private readonly JsonSerializerOptions serializerOptions;
 
-        public JsonNetCosmosSerializer(JsonSerializer serializer)
-        {
-            this.Serializer = serializer;
-        }
+        public JsonNetCosmosSerializer(JsonSerializerOptions serializerOptions) =>
+            this.serializerOptions = serializerOptions;
 
-        public JsonNetCosmosSerializer(JsonSerializerSettings serializerSettings)
-            : this(JsonSerializer.Create(serializerSettings))
+        public override T FromStream<T>([NotNull] System.IO.Stream stream)
         {
-        }
+            if (typeof(Stream).IsAssignableFrom(typeof(T)))
+                return (T)(object)stream;
 
-        public override T FromStream<T>(System.IO.Stream stream)
-        {
             using (stream)
             {
-                if (typeof(Stream).IsAssignableFrom(typeof(T)))
-                    return (T)(object)stream;
+                if (stream.CanSeek && stream.Length == 0)
+                    return default!;
 
-                using var streamReader = new StreamReader(stream);
-                using var textReader = new JsonTextReader(streamReader);
-                
-                return this.Serializer.Deserialize<T>(textReader);
+                return JsonSerializer.Deserialize<T>(stream, serializerOptions)!;
             }
         }
 
         public override System.IO.Stream ToStream<T>(T input)
         {
             var stream = new MemoryStream();
-
-            using var streamWriter = new StreamWriter(stream, encoding: JsonNetCosmosSerializer.DefaultEncoding, bufferSize: 1024, leaveOpen: true);
-            using JsonWriter writer = new JsonTextWriter(streamWriter);
-
-            this.Serializer.Serialize(writer, input);
-
-            writer.Flush();
-            streamWriter.Flush();
-
+            JsonSerializer.Serialize(stream, input, serializerOptions);
             stream.Position = 0;
 
             return stream;

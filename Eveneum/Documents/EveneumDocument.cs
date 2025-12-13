@@ -1,8 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Converters;
-using Newtonsoft.Json.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Eveneum.Documents
 {
@@ -16,48 +15,43 @@ namespace Eveneum.Documents
             this.DocumentType = documentType;
         }
 
-        [JsonProperty(PropertyName = "id")]
+        [JsonPropertyName("id")]
         public string Id { get; set; }
 
-        [JsonConverter(typeof(StringEnumConverter))]
-        [JsonProperty(PropertyName = nameof(DocumentType))]
+        [JsonConverter(typeof(JsonStringEnumConverter))]
         public DocumentType DocumentType { get; }
 
-        [JsonProperty(PropertyName = nameof(StreamId))]
         public string StreamId { get; set; }
 
-        [JsonProperty(PropertyName = nameof(Version))]
         public ulong Version { get; set; }
 
-        [JsonProperty(PropertyName = nameof(MetadataType))]
         public string MetadataType { get; set; }
 
-        [JsonProperty(PropertyName = nameof(Metadata))]
-        public JToken Metadata { get; set; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public JsonElement Metadata { get; set; }
 
-        [JsonProperty(PropertyName = nameof(BodyType))]
         public string BodyType { get; set; }
 
-        [JsonProperty(PropertyName = nameof(Body))]
-        public JToken Body { get; set; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public JsonElement Body { get; set; }
 
-        [JsonProperty(PropertyName = nameof(SortOrder))]
         public decimal SortOrder => this.Version + GetOrderingFraction(this.DocumentType);
 
-        [JsonProperty(PropertyName = nameof(Deleted))]
         public bool Deleted { get; set; }
 
-        [JsonProperty(PropertyName = "_etag")]
+        [JsonPropertyName("_etag")]
         public string ETag { get; set; }
 
-        [JsonProperty(PropertyName = "_ts")]
-        public string Timestamp { get; set; }
+        [JsonPropertyName("_ts")]
+        public long Timestamp { get; set; }
 
-        [JsonProperty(PropertyName = "ttl", NullValueHandling = NullValueHandling.Ignore)]
+        [JsonPropertyName("ttl")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public int? TimeToLive { get; set; }
 
         [JsonExtensionData]
-        public Dictionary<string, string> CustomJsonProperties { get; set; } = new();
+        public Dictionary<string, object?> CustomJsonProperties { get; set; } = new();
+
         internal static decimal GetOrderingFraction(DocumentType documentType)
         {
             switch(documentType)

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Ecierge.Eveneum;
 using Eveneum.Serialization;
 using Eveneum.Snapshots;
-using Newtonsoft.Json;
+using System.Text.Json;
 
 namespace Eveneum
 {
@@ -12,7 +12,7 @@ namespace Eveneum
         public DeleteMode DeleteMode { get; set; } = DeleteMode.SoftDelete;
         public byte BatchSize { get; set; } = 100;
         public int QueryMaxItemCount { get; set; } = 1000;
-        public JsonSerializer JsonSerializer { get; set; } = JsonSerializer.CreateDefault();
+        public JsonSerializerOptions JsonSerializerOptions { get; set; } = new JsonSerializerOptions();
         public ITypeProvider TypeProvider { get; set; }
         public bool IgnoreMissingTypes { get; set; } = false;
 
@@ -22,6 +22,6 @@ namespace Eveneum
         public ISnapshotWriter SnapshotWriter { get; set; }
         public SnapshotMode SnapshotMode { get; set; } = SnapshotMode.Multiple;
 
-        public Action<StreamId, IDictionary<string, string>>? StreamIdJsonMapping { get; set; }
+        public Action<StreamId, IDictionary<string, object?>>? StreamIdJsonMapping { get; set; }
     }
 }
