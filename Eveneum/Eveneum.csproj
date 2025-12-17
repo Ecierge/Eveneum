@@ -15,5 +15,6 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Azure.Cosmos" />
+    <PackageReference Include="Microsoft.Web.LibraryManager.Build" />
   </ItemGroup>
 </Project>

@@ -25,12 +25,8 @@ namespace Eveneum.Documents
 
         public ulong Version { get; set; }
 
-        public string MetadataType { get; set; }
-
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public JsonElement Metadata { get; set; }
-
-        public string BodyType { get; set; }
 
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public JsonElement Body { get; set; }

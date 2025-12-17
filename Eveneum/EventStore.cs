@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
@@ -29,6 +30,7 @@ namespace Eveneum
         public byte BatchSize { get; }
         public int QueryMaxItemCount { get; }
         public EveneumDocumentSerializer Serializer { get; }
+        public System.Text.Json.JsonSerializerOptions JsonSerializerOptions => this.Serializer.JsonSerializerOptions;
         public ISnapshotWriter SnapshotWriter { get; }
         public SnapshotMode SnapshotMode { get; }
 
@@ -51,7 +53,7 @@ namespace Eveneum
             this.StreamTimeToLiveAfterDelete = options.StreamTimeToLiveAfterDelete;
             this.BatchSize = Math.Min(options.BatchSize, (byte)100); // Maximum batch size supported by CosmosDB
             this.QueryMaxItemCount = options.QueryMaxItemCount;
-            this.Serializer = new EveneumDocumentSerializer(options.JsonSerializerOptions, options.TypeProvider, options.IgnoreMissingTypes);
+            this.Serializer = new EveneumDocumentSerializer(options.JsonSerializerOptions);
             this.SnapshotWriter = options.SnapshotWriter;
             this.SnapshotMode = options.SnapshotMode;
         }
@@ -70,15 +72,11 @@ namespace Eveneum
             return policy?.ConvertName(clrName) ?? clrName;
         }
 
-        private void ApplyStreamIdJson(StreamId streamId, EveneumDocument doc)
-        {
+        private void ApplyStreamIdJson(StreamId streamId, EveneumDocument doc) =>
             streamIdJsonMapping?.Invoke(streamId, doc.CustomJsonProperties);
-        }
 
-        public async Task Initialize(CancellationToken cancellationToken = default)
-        {
+        public async Task Initialize(CancellationToken cancellationToken = default) =>
             await CreateStoredProcedure(BulkDeleteStoredProc, "BulkDelete", cancellationToken);
-        }
 
         public Task<StreamResponse> ReadStreamAsOfVersion(StreamId streamId, ulong version, CancellationToken cancellationToken = default) =>
             ReadStream(streamId, new ReadStreamOptions { FromVersion = null, ToVersion = version, IgnoreSnapshots = false, MaxItemCount = 100 }, cancellationToken);
@@ -160,7 +158,7 @@ namespace Eveneum
             try
             {
                 var events = documents.Where(x => x.DocumentType == DocumentType.Event).Select(this.Serializer.DeserializeEvent).Reverse().ToArray();
-                var metadata = this.Serializer.DeserializeObject(headerDocument.MetadataType, headerDocument.Metadata);
+                var metadata = headerDocument.Metadata;
 
                 var snapshotDocument = documents.FirstOrDefault(x => x.DocumentType == DocumentType.Snapshot);
 
@@ -170,15 +168,21 @@ namespace Eveneum
                 {
                     snapshot = this.Serializer.DeserializeSnapshot(snapshotDocument);
 
-                    if (snapshot.Value.Data is SnapshotWriterSnapshot)
+                    var snapshotWriterTypePropName = this.Serializer.JsonSerializerOptions.PropertyNamingPolicy
+                        ?.ConvertName(nameof(SnapshotWriterSnapshot.SnapshotWriterType))
+                        ?? nameof(SnapshotWriterSnapshot.SnapshotWriterType);
+
+                    // Check if it's a SnapshotWriterSnapshot by looking at JSON structure
+                    if (snapshot.Value.Data.ValueKind == JsonValueKind.Object &&
+                        snapshot.Value.Data.TryGetProperty(snapshotWriterTypePropName, out var writerTypeElement) &&
+                        writerTypeElement.ValueKind == JsonValueKind.String &&
+                        !string.IsNullOrEmpty(writerTypeElement.GetString()))
+                    {
                         snapshot = await this.SnapshotWriter.ReadSnapshot(streamId, snapshot.Value.Version, cancellationToken);
+                    }
                 }
 
                 return new StreamResponse(new Stream(streamId.LogicalStreamId, headerDocument.Version, metadata, events, snapshot), false, requestCharge);
-            }
-            catch (TypeNotFoundException ex)
-            {
-                throw new StreamDeserializationException(streamId.LogicalStreamId, requestCharge, ex.Type, ex);
             }
             catch (JsonDeserializationException ex)
             {
@@ -338,8 +342,18 @@ namespace Eveneum
                 customSnapshotCreated = await this.SnapshotWriter.CreateSnapshot(streamId, version, snapshot, metadata, cancellationToken);
 
             var document = customSnapshotCreated
-                ? this.Serializer.SerializeSnapshot(new SnapshotWriterSnapshot(this.SnapshotWriter.GetType().AssemblyQualifiedName), null, version, streamId.LogicalStreamId, this.SnapshotMode)
-                : this.Serializer.SerializeSnapshot(snapshot, metadata, version, streamId.LogicalStreamId, this.SnapshotMode);
+                ? this.Serializer.SerializeSnapshot(
+                    JsonSerializer.SerializeToElement(new SnapshotWriterSnapshot(this.SnapshotWriter.GetType().AssemblyQualifiedName), this.Serializer.JsonSerializerOptions),
+                    null,
+                    version,
+                    streamId.LogicalStreamId,
+                    this.SnapshotMode)
+                : this.Serializer.SerializeSnapshot(
+                    JsonSerializer.SerializeToElement(snapshot, this.Serializer.JsonSerializerOptions),
+                    metadata != null ? JsonSerializer.SerializeToElement(metadata, this.Serializer.JsonSerializerOptions) : null,
+                    version,
+                    streamId.LogicalStreamId,
+                    this.SnapshotMode);
             ApplyStreamIdJson(streamId, document);
             var response = await this.Container.UpsertItemAsync(document, streamId.ToPartitionKey(), cancellationToken: cancellationToken);
 
@@ -391,7 +405,7 @@ namespace Eveneum
             => this.LoadStreamHeaders(new QueryDefinition(query), callback, cancellationToken);
 
         public Task<Response> LoadStreamHeaders(QueryDefinition query, Func<IReadOnlyCollection<StreamHeader>, Task> callback, CancellationToken cancellationToken = default)
-            => LoadDocuments(query, response => callback(response.Where(x => x.DocumentType == DocumentType.Header).Select(x => new StreamHeader(x.StreamId, x.Version, this.Serializer.DeserializeObject(x.MetadataType, x.Metadata), x.Deleted)).ToList()), cancellationToken);
+            => LoadDocuments(query, response => callback(response.Where(x => x.DocumentType == DocumentType.Header).Select(x => new StreamHeader(x.StreamId, x.Version, x.Metadata, x.Deleted)).ToList()), cancellationToken);
 
         public async Task<Response> ReplaceEvent(StreamId streamId, EventData newEvent, CancellationToken cancellationToken = default)
         {
@@ -413,7 +427,7 @@ namespace Eveneum
         {
             var result = await this.ReadHeaderDocument(streamId, cancellationToken);
 
-            return new StreamHeaderResponse(new StreamHeader(streamId.LogicalStreamId, result.Document.Version, this.Serializer.DeserializeObject(result.Document.MetadataType, result.Document.Metadata), result.Document.Deleted), result.RequestCharge);
+            return new StreamHeaderResponse(new StreamHeader(streamId.LogicalStreamId, result.Document.Version, result.Document.Metadata, result.Document.Deleted), result.RequestCharge);
         }
 
         private async Task<Response> LoadDocuments(QueryDefinition query, Func<FeedResponse<EveneumDocument>, Task> callback, CancellationToken cancellationToken = default)

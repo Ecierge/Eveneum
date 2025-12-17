@@ -30,5 +30,6 @@ namespace Eveneum
     public interface IEventStore : IReadStream, IWriteToStream, IDeleteStream, IManageSnapshots
     {
         Task Initialize(CancellationToken cancellationToken = default);
+        System.Text.Json.JsonSerializerOptions JsonSerializerOptions { get; }
     }
 }
