@@ -1,0 +1,13 @@
+{
+  "version": "3.0",
+  "defaultProvider": "jsdelivr",
+  "libraries": [
+    {
+      "library": "@types/documentdb-server@0.0.40",
+      "destination": "lib/types/documentdb-server/",
+      "files": [
+        "index.d.ts"
+      ]
+    }
+  ]
+}

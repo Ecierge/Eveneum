@@ -9,6 +9,8 @@
     <!-- Azure -->
     <PackageVersion Include="Microsoft.ApplicationInsights" Version="2.23.0" />
     <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.35.4" />
+    <!-- Build -->
+    <PackageVersion Include="Microsoft.Web.LibraryManager.Build" Version="3.0.114" />
     <!-- JSON Serialization -->
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageVersion Include="NodaTime.Serialization.JsonNet" Version="3.3.0" />
