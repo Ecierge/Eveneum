@@ -10,6 +10,7 @@ public class Response
     }
 
     public double RequestCharge { get; }
+    public ulong Version { get; init; }
 }
 
 public class StreamResponse : Response

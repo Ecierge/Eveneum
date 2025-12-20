@@ -21,4 +21,6 @@ public class EventStoreOptions
     public SnapshotMode SnapshotMode { get; set; } = SnapshotMode.Multiple;
 
     public Action<StreamId, IDictionary<string, object?>>? StreamIdJsonMapping { get; set; }
+
+    public TimeSpan DraftEventTimeToLive { get; set; } = TimeSpan.FromMinutes(5);
 }

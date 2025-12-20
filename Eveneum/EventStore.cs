@@ -23,6 +23,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
 
     public DeleteMode DeleteMode { get; }
     public TimeSpan StreamTimeToLiveAfterDelete { get; }
+    public TimeSpan DraftEventTimeToLive { get; }
     public byte BatchSize { get; }
     public int QueryMaxItemCount { get; }
     public EveneumDocumentSerializer Serializer { get; }
@@ -51,6 +52,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
 
         this.DeleteMode = options.DeleteMode;
         this.StreamTimeToLiveAfterDelete = options.StreamTimeToLiveAfterDelete;
+        this.DraftEventTimeToLive = options.DraftEventTimeToLive;
         this.BatchSize = Math.Min(options.BatchSize, (byte)100); // Maximum batch size supported by CosmosDB
         this.QueryMaxItemCount = options.QueryMaxItemCount;
         this.Serializer = new EveneumDocumentSerializer(options.JsonSerializerOptions);
@@ -191,6 +193,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
 
     public async Task<Response> WriteToStream(StreamId streamId, EventData[] events, ulong? expectedVersion = null, object? metadata = null, CancellationToken cancellationToken = default)
     {
+        var timeToLive = DraftEventTimeToLive == TimeSpan.Zero ? null : (int?)DraftEventTimeToLive.TotalSeconds;
         double requestCharge = 0;
 
         var isNewStream = !expectedVersion.HasValue;
@@ -200,7 +203,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
 
         if (!expectedVersion.HasValue)
         {
-            header = new EveneumDocument(streamId.LogicalStreamId, DocumentType.Header) { StreamId = streamId.LogicalStreamId };
+            header = new EveneumDocument(streamId.LogicalStreamId, DocumentType.Header) { StreamId = streamId.LogicalStreamId, TimeToLive = timeToLive };
             ApplyStreamIdJson(streamId, header);
         }
         else
@@ -243,7 +246,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
 
             foreach (var @event in batch)
             {
-                var document = this.Serializer.SerializeEvent(@event, streamId.LogicalStreamId);
+                var document = this.Serializer.SerializeEvent(@event, streamId.LogicalStreamId, DraftEventTimeToLive);
                 ApplyStreamIdJson(streamId, document);
                 transaction.CreateItem(document);
             }
@@ -280,7 +283,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
         }
         while (offset < events.Length);
 
-        return new Response(requestCharge);
+        return new Response(requestCharge) { Version = header.Version };
     }
 
     public async Task<DeleteResponse> DeleteStream(StreamId streamId, ulong expectedVersion, CancellationToken cancellationToken = default)
@@ -400,7 +403,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
     {
         try
         {
-            var document = this.Serializer.SerializeEvent(newEvent, newEvent.StreamId);
+            var document = this.Serializer.SerializeEvent(newEvent, newEvent.StreamId, DraftEventTimeToLive);
             ApplyStreamIdJson(streamId, document);
 
             var response = await Persistence.ReplaceItemAsync(
