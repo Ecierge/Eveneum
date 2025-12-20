@@ -27,6 +27,7 @@ namespace Eveneum
 
         public DeleteMode DeleteMode { get; }
         public TimeSpan StreamTimeToLiveAfterDelete { get; }
+        public TimeSpan DraftEventTimeToLive { get; }
         public byte BatchSize { get; }
         public int QueryMaxItemCount { get; }
         public EveneumDocumentSerializer Serializer { get; }
@@ -51,6 +52,7 @@ namespace Eveneum
 
             this.DeleteMode = options.DeleteMode;
             this.StreamTimeToLiveAfterDelete = options.StreamTimeToLiveAfterDelete;
+            this.DraftEventTimeToLive = options.DraftEventTimeToLive;
             this.BatchSize = Math.Min(options.BatchSize, (byte)100); // Maximum batch size supported by CosmosDB
             this.QueryMaxItemCount = options.QueryMaxItemCount;
             this.Serializer = new EveneumDocumentSerializer(options.JsonSerializerOptions);
@@ -193,6 +195,8 @@ namespace Eveneum
         public async Task<Response> WriteToStream(StreamId streamId, EventData[] events, ulong? expectedVersion = null, object? metadata = null, CancellationToken cancellationToken = default)
         {
             var transaction = this.Container.CreateTransactionalBatch(streamId.ToPartitionKey());
+            var timeToLive = DraftEventTimeToLive == TimeSpan.Zero ? null : (int?)DraftEventTimeToLive.TotalSeconds;
+            ulong totalVersion = 0;
             double requestCharge = 0;
 
             // Existing stream
@@ -210,20 +214,21 @@ namespace Eveneum
                     throw new OptimisticConcurrencyException(streamId.LogicalStreamId, requestCharge, expectedVersion.Value, header.Version);
 
                 header.Version += (ulong)events.Length;
+                totalVersion = header.Version;
 
                 this.Serializer.SerializeHeaderMetadata(header, metadata);
                 transaction.ReplaceItem(header.Id, header, new TransactionalBatchItemRequestOptions { IfMatchEtag = header.ETag });
             }
             else
             {
-                var header = new EveneumDocument(streamId.LogicalStreamId, DocumentType.Header) { StreamId = streamId.LogicalStreamId, Version = (ulong)events.Length };
-
+                var header = new EveneumDocument(streamId.LogicalStreamId, DocumentType.Header) { StreamId = streamId.LogicalStreamId, Version = (ulong)events.Length, TimeToLive = timeToLive };
+                totalVersion = header.Version;
                 this.Serializer.SerializeHeaderMetadata(header, metadata);
                 ApplyStreamIdJson(streamId, header);
                 transaction.CreateItem(header);
             }
 
-            var firstBatch = events.Take(this.BatchSize - 1).Select(@event => this.Serializer.SerializeEvent(@event, streamId.LogicalStreamId));
+            var firstBatch = events.Take(this.BatchSize - 1).Select(@event => this.Serializer.SerializeEvent(@event, streamId.LogicalStreamId, DraftEventTimeToLive));
             foreach (var document in firstBatch)
             {
                 ApplyStreamIdJson(streamId, document);
@@ -249,7 +254,7 @@ namespace Eveneum
             else if (!response.IsSuccessStatusCode)
                 throw new WriteException(streamId.LogicalStreamId, requestCharge, response.ErrorMessage, response.StatusCode);
 
-            foreach (var batch in events.Skip(this.BatchSize - 1).Select(@event => this.Serializer.SerializeEvent(@event, streamId.LogicalStreamId)).Batch(this.BatchSize))
+            foreach (var batch in events.Skip(this.BatchSize - 1).Select(@event => this.Serializer.SerializeEvent(@event, streamId.LogicalStreamId, DraftEventTimeToLive)).Batch(this.BatchSize))
             {
                 if(!batch.Any())
                     continue;
@@ -277,7 +282,7 @@ namespace Eveneum
                     throw new WriteException(streamId.LogicalStreamId, requestCharge, batchResponse.ErrorMessage, batchResponse.StatusCode);
             }
 
-            return new Response(requestCharge);
+            return new Response(requestCharge) { Version = totalVersion };
         }
 
         public async Task<DeleteResponse> DeleteStream(StreamId streamId, ulong expectedVersion, CancellationToken cancellationToken = default)
@@ -411,7 +416,7 @@ namespace Eveneum
         {
             try
             {
-                var document = this.Serializer.SerializeEvent(newEvent, newEvent.StreamId);
+                var document = this.Serializer.SerializeEvent(newEvent, newEvent.StreamId, DraftEventTimeToLive);
                 ApplyStreamIdJson(streamId, document);
                 var response = await this.Container.ReplaceItemAsync(document, EveneumDocumentSerializer.GenerateEventId(newEvent.StreamId, newEvent.Version), streamId.ToPartitionKey(), cancellationToken: cancellationToken);
 

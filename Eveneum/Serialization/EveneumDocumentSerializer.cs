@@ -32,7 +32,7 @@ namespace Eveneum.Serialization
             }
         }
 
-        internal EveneumDocument SerializeEvent(EventData @event, string streamId)
+        internal EveneumDocument SerializeEvent(EventData @event, string streamId, TimeSpan draftEventTtl)
         {
             var document = new EveneumDocument(GenerateEventId(streamId, @event.Version), DocumentType.Event)
             {
@@ -40,6 +40,7 @@ namespace Eveneum.Serialization
                 Version = @event.Version,
                 Body = @event.Body,
                 Metadata = @event.Metadata,
+                TimeToLive = draftEventTtl == TimeSpan.Zero ? null : (int?)draftEventTtl.TotalSeconds
             };
 
             return document;
