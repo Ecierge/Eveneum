@@ -190,10 +190,20 @@ public class EventStore : IEventStore, IAdvancedEventStore
             throw new StreamDeserializationException(streamId.LogicalStreamId, requestCharge, ex.Type, ex);
         }
     }
+    private string GetMetadataState (JsonElement element)
+    {
+        var metadata = element.GetProperty("state");
+        if (metadata.ValueKind == JsonValueKind.String)
+            return metadata.GetString() ?? string.Empty;
+        return string.Empty;
+    }
 
     public async Task<Response> WriteToStream(StreamId streamId, EventData[] events, ulong? expectedVersion = null, object? metadata = null, CancellationToken cancellationToken = default)
     {
         var timeToLive = DraftEventTimeToLive == TimeSpan.Zero ? null : (int?)DraftEventTimeToLive.TotalSeconds;
+        var isDraft = events
+            .Select(e => GetMetadataState(e.Metadata))
+            .Any(state => string.Equals(state, "draft", StringComparison.OrdinalIgnoreCase));
         double requestCharge = 0;
 
         var isNewStream = !expectedVersion.HasValue;
@@ -203,7 +213,8 @@ public class EventStore : IEventStore, IAdvancedEventStore
 
         if (!expectedVersion.HasValue)
         {
-            header = new EveneumDocument(streamId.LogicalStreamId, DocumentType.Header) { StreamId = streamId.LogicalStreamId, TimeToLive = timeToLive };
+            header = new EveneumDocument(streamId.LogicalStreamId, DocumentType.Header) { StreamId = streamId.LogicalStreamId };
+            header.TimeToLive = isDraft ? timeToLive : null;
             ApplyStreamIdJson(streamId, header);
         }
         else
@@ -222,6 +233,8 @@ public class EventStore : IEventStore, IAdvancedEventStore
         }
 
         this.Serializer.SerializeHeaderMetadata(header, metadata);
+
+        var ttl = isDraft ? DraftEventTimeToLive : TimeSpan.Zero;
 
         var baseVersion = header.Version;
         var batchSize = Math.Max(1, this.BatchSize - 1);
@@ -246,7 +259,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
 
             foreach (var @event in batch)
             {
-                var document = this.Serializer.SerializeEvent(@event, streamId.LogicalStreamId, DraftEventTimeToLive);
+                var document = this.Serializer.SerializeEvent(@event, streamId.LogicalStreamId, ttl);
                 ApplyStreamIdJson(streamId, document);
                 transaction.CreateItem(document);
             }
