@@ -191,11 +191,21 @@ namespace Eveneum
                 throw new StreamDeserializationException(streamId.LogicalStreamId, requestCharge, ex.Type, ex);
             }
         }
+        private string GetMetadataState (JsonElement element)
+        {
+            var metadata = element.GetProperty("state");
+            if (metadata.ValueKind == JsonValueKind.String)
+                return metadata.GetString() ?? string.Empty;
+            return string.Empty;
+        }
 
         public async Task<Response> WriteToStream(StreamId streamId, EventData[] events, ulong? expectedVersion = null, object? metadata = null, CancellationToken cancellationToken = default)
         {
             var transaction = this.Container.CreateTransactionalBatch(streamId.ToPartitionKey());
             var timeToLive = DraftEventTimeToLive == TimeSpan.Zero ? null : (int?)DraftEventTimeToLive.TotalSeconds;
+            var isDraft = events
+                .Select(e => GetMetadataState(e.Metadata))
+                .Any(state => string.Equals(state, "draft", StringComparison.OrdinalIgnoreCase));
             ulong totalVersion = 0;
             double requestCharge = 0;
 
@@ -221,14 +231,15 @@ namespace Eveneum
             }
             else
             {
-                var header = new EveneumDocument(streamId.LogicalStreamId, DocumentType.Header) { StreamId = streamId.LogicalStreamId, Version = (ulong)events.Length, TimeToLive = timeToLive };
+                var header = new EveneumDocument(streamId.LogicalStreamId, DocumentType.Header) { StreamId = streamId.LogicalStreamId, Version = (ulong)events.Length };
+                header.TimeToLive = isDraft ? timeToLive : null;
                 totalVersion = header.Version;
                 this.Serializer.SerializeHeaderMetadata(header, metadata);
                 ApplyStreamIdJson(streamId, header);
                 transaction.CreateItem(header);
             }
-
-            var firstBatch = events.Take(this.BatchSize - 1).Select(@event => this.Serializer.SerializeEvent(@event, streamId.LogicalStreamId, DraftEventTimeToLive));
+            var ttl = isDraft ? DraftEventTimeToLive : TimeSpan.Zero;
+            var firstBatch = events.Take(this.BatchSize - 1).Select(@event => this.Serializer.SerializeEvent(@event, streamId.LogicalStreamId, ttl));
             foreach (var document in firstBatch)
             {
                 ApplyStreamIdJson(streamId, document);
@@ -254,7 +265,7 @@ namespace Eveneum
             else if (!response.IsSuccessStatusCode)
                 throw new WriteException(streamId.LogicalStreamId, requestCharge, response.ErrorMessage, response.StatusCode);
 
-            foreach (var batch in events.Skip(this.BatchSize - 1).Select(@event => this.Serializer.SerializeEvent(@event, streamId.LogicalStreamId, DraftEventTimeToLive)).Batch(this.BatchSize))
+            foreach (var batch in events.Skip(this.BatchSize - 1).Select(@event => this.Serializer.SerializeEvent(@event, streamId.LogicalStreamId, ttl)).Batch(this.BatchSize))
             {
                 if(!batch.Any())
                     continue;
