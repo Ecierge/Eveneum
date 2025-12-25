@@ -20,7 +20,7 @@ namespace Eveneum
         public ISnapshotWriter SnapshotWriter { get; set; }
         public SnapshotMode SnapshotMode { get; set; } = SnapshotMode.Multiple;
 
-        public Action<StreamId, IDictionary<string, object?>>? StreamIdJsonMapping { get; set; }
+        public Action<StreamPartitionKey, IDictionary<string, object?>>? StreamIdJsonMapping { get; set; }
 
         public TimeSpan DraftEventTimeToLive { get; set; } = TimeSpan.FromMinutes(5);
     }
