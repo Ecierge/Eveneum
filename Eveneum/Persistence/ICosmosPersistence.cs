@@ -65,7 +65,7 @@ public interface ICosmosPersistence
     /// When soft deletion is disabled, the TTL value may be ignored by the implementation.
     /// </remarks>
     Task<DeleteResponse> DeleteItems(
-        StreamId streamId,
+        StreamPartitionKey streamId,
         string query, 
         bool softDelete, 
         int? ttl, 

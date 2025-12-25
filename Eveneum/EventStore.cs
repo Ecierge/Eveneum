@@ -19,7 +19,7 @@ namespace Eveneum;
 public class EventStore : IEventStore, IAdvancedEventStore
 {
     private readonly ICosmosPersistence Persistence;
-    private readonly Action<StreamId, IDictionary<string, object?>>? streamIdJsonMapping;
+    private readonly Action<StreamPartitionKey, IDictionary<string, object?>>? streamIdJsonMapping;
 
     public DeleteMode DeleteMode { get; }
     public TimeSpan StreamTimeToLiveAfterDelete { get; }
@@ -74,13 +74,13 @@ public class EventStore : IEventStore, IAdvancedEventStore
         return policy?.ConvertName(clrName) ?? clrName;
     }
 
-    private void ApplyStreamIdJson(StreamId streamId, EveneumDocument doc) =>
+    private void ApplyStreamIdJson(StreamPartitionKey streamId, EveneumDocument doc) =>
         streamIdJsonMapping?.Invoke(streamId, doc.CustomJsonProperties);
 
     public async Task Initialize(CancellationToken cancellationToken = default) =>
         await Persistence.Initialize(cancellationToken);
 
-    public Task<StreamResponse> ReadStream(StreamId streamId, ReadStreamOptions? options = null, CancellationToken cancellationToken = default)
+    public Task<StreamResponse> ReadStream(StreamPartitionKey streamId, ReadStreamOptions? options = null, CancellationToken cancellationToken = default)
     {
         options = options ?? new ReadStreamOptions();
 
@@ -110,9 +110,9 @@ public class EventStore : IEventStore, IAdvancedEventStore
         return ReadStream(streamId, query, maxItemCount, cancellationToken);
     }
 
-    private async Task<StreamResponse> ReadStream(StreamId streamId, string sql, int maxItemCount, CancellationToken cancellationToken)
+    private async Task<StreamResponse> ReadStream(StreamPartitionKey streamId, string sql, int maxItemCount, CancellationToken cancellationToken)
     {
-        using var iterator = this.Persistence.GetItemQueryIterator(sql, streamId.ToPartitionKey(), maxItemCount);
+        using var iterator = this.Persistence.GetItemQueryIterator(sql, streamId, maxItemCount);
 
         var documents = new List<EveneumDocument>();
         var finishLoading = false;
@@ -198,7 +198,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
         return string.Empty;
     }
 
-    public async Task<Response> WriteToStream(StreamId streamId, EventData[] events, ulong? expectedVersion = null, object? metadata = null, CancellationToken cancellationToken = default)
+    public async Task<Response> WriteToStream(StreamPartitionKey streamId, EventData[] events, ulong? expectedVersion = null, object? metadata = null, CancellationToken cancellationToken = default)
     {
         var timeToLive = DraftEventTimeToLive == TimeSpan.Zero ? null : (int?)DraftEventTimeToLive.TotalSeconds;
         var isDraft = events
@@ -250,7 +250,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
 
             header.Version = baseVersion + (ulong)writtenEvents;
 
-            var transaction = Persistence.CreateTransactionalBatch(streamId.ToPartitionKey());
+            var transaction = Persistence.CreateTransactionalBatch(streamId);
 
             if (isNewStream && firstBatch)
                 transaction.CreateItem(header);
@@ -299,7 +299,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
         return new Response(requestCharge) { Version = header.Version };
     }
 
-    public async Task<DeleteResponse> DeleteStream(StreamId streamId, ulong expectedVersion, CancellationToken cancellationToken = default)
+    public async Task<DeleteResponse> DeleteStream(StreamPartitionKey streamId, ulong expectedVersion, CancellationToken cancellationToken = default)
     {
         var headerResponse = await this.ReadHeaderDocument(streamId, cancellationToken);
 
@@ -329,7 +329,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
         return new DeleteResponse(deleteResponse.DeletedDocuments, requestCharge + deleteResponse.RequestCharge);
     }
 
-    public async Task<Response> CreateSnapshot(StreamId streamId, ulong version, object snapshot, object? metadata = null, bool deleteOlderSnapshots = false, CancellationToken cancellationToken = default)
+    public async Task<Response> CreateSnapshot(StreamPartitionKey streamId, ulong version, object snapshot, object? metadata = null, bool deleteOlderSnapshots = false, CancellationToken cancellationToken = default)
     {
         var headerResponse = await this.ReadHeaderDocument(streamId, cancellationToken);
 
@@ -385,7 +385,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
         return new Response(requestCharge);
     }
 
-    public async Task<DeleteResponse> DeleteSnapshots(StreamId streamId, ulong olderThanVersion, CancellationToken cancellationToken = default)
+    public async Task<DeleteResponse> DeleteSnapshots(StreamPartitionKey streamId, ulong olderThanVersion, CancellationToken cancellationToken = default)
     {
         var query = $"SELECT * FROM c WHERE c.{GetJsonPropertyName(nameof(EveneumDocument.DocumentType))} = 'Snapshot' AND c.{GetJsonPropertyName(nameof(EveneumDocument.Version))} < {olderThanVersion}";
 
@@ -412,7 +412,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
     public Task<Response> LoadStreamHeaders(QueryDefinition query, Func<IReadOnlyCollection<StreamHeader>, Task> callback, CancellationToken cancellationToken = default)
         => LoadDocuments(query, response => callback(response.Where(x => x.DocumentType == DocumentType.Header).Select(x => new StreamHeader(x.StreamId, x.Version, x.Metadata, x.Deleted)).ToList()), cancellationToken);
 
-    public async Task<Response> ReplaceEvent(StreamId streamId, EventData newEvent, CancellationToken cancellationToken = default)
+    public async Task<Response> ReplaceEvent(StreamPartitionKey streamId, EventData newEvent, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -433,14 +433,14 @@ public class EventStore : IEventStore, IAdvancedEventStore
         }
     }
 
-    public async Task<DeleteResponse> DeleteEvent(StreamId streamId, ulong version, CancellationToken cancellationToken = default)
+    public async Task<DeleteResponse> DeleteEvent(StreamPartitionKey streamId, ulong version, CancellationToken cancellationToken = default)
     {
         var query = $"SELECT * FROM c WHERE c.{GetJsonPropertyName(nameof(EveneumDocument.DocumentType))} = 'Event' AND c.{GetJsonPropertyName(nameof(EveneumDocument.Version))} = {version}";
 
         return await DeleteDocuments(streamId, query, cancellationToken);
     }
 
-    public async Task<StreamHeaderResponse> ReadHeader(StreamId streamId, CancellationToken cancellationToken = default)
+    public async Task<StreamHeaderResponse> ReadHeader(StreamPartitionKey streamId, CancellationToken cancellationToken = default)
     {
         var result = await this.ReadHeaderDocument(streamId, cancellationToken);
 
@@ -471,7 +471,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
         return new Response(requestCharge);
     }
 
-    private async Task<DocumentResponse> ReadHeaderDocument(StreamId streamId, CancellationToken cancellationToken = default)
+    private async Task<DocumentResponse> ReadHeaderDocument(StreamPartitionKey streamId, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -485,7 +485,7 @@ public class EventStore : IEventStore, IAdvancedEventStore
         }
     }
 
-    private async Task<DeleteResponse> DeleteDocuments(StreamId streamId, string query, CancellationToken cancellationToken)
+    private async Task<DeleteResponse> DeleteDocuments(StreamPartitionKey streamId, string query, CancellationToken cancellationToken)
     {
         var headerResponse = await this.ReadHeader(streamId, cancellationToken);
 

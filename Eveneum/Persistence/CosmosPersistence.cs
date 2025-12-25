@@ -151,12 +151,12 @@ public class CosmosPersistence : ICosmosPersistence
         return new CosmosItemResponse<EveneumDocument>(result.Resource, result.RequestCharge);
     }
 
-    public Task<DeleteResponse> DeleteItems(StreamId streamId, string query, bool softDelete, int? ttl, byte batchSize, int? maxItemCount = null, CancellationToken cancellationToken = default) =>
+    public Task<DeleteResponse> DeleteItems(StreamPartitionKey streamId, string query, bool softDelete, int? ttl, byte batchSize, int? maxItemCount = null, CancellationToken cancellationToken = default) =>
         this.BulkDeleteMode == BulkDeleteMode.TransactionalBatch
             ? this.BulkDeleteDocumentsUsingTransactionalBatch(streamId, query, softDelete, ttl, batchSize, maxItemCount, cancellationToken)
             : this.BulkDeleteDocumentsUsingStoredProcedure(streamId, query, softDelete, ttl, cancellationToken);
 
-    private async Task<DeleteResponse> BulkDeleteDocumentsUsingStoredProcedure(StreamId streamId, string query, bool softDelete, int? ttl, CancellationToken cancellationToken = default)
+    private async Task<DeleteResponse> BulkDeleteDocumentsUsingStoredProcedure(StreamPartitionKey streamId, string query, bool softDelete, int? ttl, CancellationToken cancellationToken = default)
     {
         double requestCharge = 0;
         ulong deletedDocuments = 0;
@@ -178,7 +178,7 @@ public class CosmosPersistence : ICosmosPersistence
         return new DeleteResponse(deletedDocuments, requestCharge);
     }
 
-    private async Task<DeleteResponse> BulkDeleteDocumentsUsingTransactionalBatch(StreamId streamId, string query, bool softDelete, int? ttl, byte batchSize, int? maxItemCount = null, CancellationToken cancellationToken = default)
+    private async Task<DeleteResponse> BulkDeleteDocumentsUsingTransactionalBatch(StreamPartitionKey streamId, string query, bool softDelete, int? ttl, byte batchSize, int? maxItemCount = null, CancellationToken cancellationToken = default)
     {
         double requestCharge = 0;
         ulong deletedDocuments = 0;
