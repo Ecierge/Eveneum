@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace Eveneum.Documents
@@ -62,5 +63,6 @@ namespace Eveneum.Documents
                     throw new NotSupportedException($"Document type '{documentType}' is not supported.");
             }
         }
+        public JsonNode GetBodyAsJsonNode() => JsonNode.Parse(this.Body.GetRawText())!;
     }
 }

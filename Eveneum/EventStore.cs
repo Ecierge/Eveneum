@@ -87,7 +87,7 @@ namespace Eveneum
         public Task<StreamResponse> ReadStreamIgnoringSnapshots(StreamPartitionKey streamId, CancellationToken cancellationToken = default) =>
             ReadStream(streamId, new ReadStreamOptions { FromVersion = null, ToVersion = null, IgnoreSnapshots = true, MaxItemCount = null }, cancellationToken);
 
-        public Task<StreamResponse> ReadStream(StreamPartitionKey streamId, ReadStreamOptions options = null, CancellationToken cancellationToken = default)
+        public Task<StreamResponse> ReadStream(StreamPartitionKey streamId, ReadStreamOptions? options = null, CancellationToken cancellationToken = default)
         {
             options = options ?? new ReadStreamOptions();
 
