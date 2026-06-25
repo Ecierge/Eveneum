@@ -191,21 +191,22 @@ namespace Eveneum
                 throw new StreamDeserializationException(streamId.LogicalStreamId, requestCharge, ex.Type, ex);
             }
         }
-        private string GetMetadataState (JsonElement element)
+        private static bool HasDraftEvents(EventData[] events)
         {
-            var metadata = element.GetProperty("state");
-            if (metadata.ValueKind == JsonValueKind.String)
-                return metadata.GetString() ?? string.Empty;
-            return string.Empty;
+            for (var i = 0; i < events.Length; i++)
+            {
+                if (EventMetadataState.IsDraft(events[i].Metadata))
+                    return true;
+            }
+
+            return false;
         }
 
         public async Task<Response> WriteToStream(StreamPartitionKey streamId, EventData[] events, ulong? expectedVersion = null, object? metadata = null, CancellationToken cancellationToken = default)
         {
             var transaction = this.Container.CreateTransactionalBatch(streamId);
             var timeToLive = DraftEventTimeToLive == TimeSpan.Zero ? null : (int?)DraftEventTimeToLive.TotalSeconds;
-            var isDraft = events
-                .Select(e => GetMetadataState(e.Metadata))
-                .Any(state => string.Equals(state, "draft", StringComparison.OrdinalIgnoreCase));
+            var isDraft = HasDraftEvents(events);
             ulong totalVersion = 0;
             double requestCharge = 0;
 
