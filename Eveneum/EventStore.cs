@@ -307,9 +307,6 @@ public class EventStore : IEventStore, IAdvancedEventStore
         var existingHeader = headerResponse.Document;
         var requestCharge = headerResponse.RequestCharge;
 
-        if (existingHeader is null)
-            throw new StreamNotFoundException(streamId.LogicalStreamId, requestCharge);
-
         if (existingHeader.Deleted)
             throw new StreamDeletedException(streamId.LogicalStreamId, requestCharge);
 
@@ -336,9 +333,6 @@ public class EventStore : IEventStore, IAdvancedEventStore
 
         var header = headerResponse.Document;
         var requestCharge = headerResponse.RequestCharge;
-
-        if (header is null)
-            throw new StreamNotFoundException(streamId.LogicalStreamId, requestCharge);
 
         if (header.Deleted)
             throw new StreamDeletedException(streamId.LogicalStreamId, requestCharge);
@@ -477,6 +471,9 @@ public class EventStore : IEventStore, IAdvancedEventStore
         try
         {
             var result = await this.Persistence.ReadItemAsync(streamId.LogicalStreamId, streamId.ToPartitionKey(), cancellationToken);
+
+            if (result.Resource is null)
+                throw new StreamNotFoundException(streamId.LogicalStreamId, result.RequestCharge);
 
             return new DocumentResponse(result.Resource, result.RequestCharge);
         }
