@@ -203,6 +203,15 @@ public class EventStore : IEventStore, IAdvancedEventStore
 
     public async Task<Response> WriteToStream(StreamPartitionKey streamId, EventData[] events, ulong? expectedVersion = null, object? metadata = null, CancellationToken cancellationToken = default)
     {
+        if (events is null)
+            throw new ArgumentNullException(nameof(events));
+
+        for (var i = 0; i < events.Length; i++)
+        {
+            if (events[i].Body.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+                throw new ArgumentException($"Event at index {i} of stream '{streamId}' has no Body.", nameof(events));
+        }
+
         var timeToLive = DraftEventTimeToLive == TimeSpan.Zero ? null : (int?)DraftEventTimeToLive.TotalSeconds;
         var isDraft = HasDraftEvents(events);
         double requestCharge = 0;
