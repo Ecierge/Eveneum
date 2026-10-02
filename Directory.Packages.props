@@ -1,8 +1,11 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- Found when Eveneum is a submodule of a repository that pins package versions centrally -->
+    <HostDirectoryPackagesProps>$([MSBuild]::GetPathOfFileAbove('Directory.Packages.props', '$(MSBuildThisFileDirectory)../'))</HostDirectoryPackagesProps>
   </PropertyGroup>
-  <ItemGroup>
+  <Import Project="$(HostDirectoryPackagesProps)" Condition="'$(HostDirectoryPackagesProps)' != ''" />
+  <ItemGroup Condition="'$(HostDirectoryPackagesProps)' == ''">
     <!-- Azure -->
     <PackageVersion Include="Microsoft.ApplicationInsights" Version="2.23.0" />
     <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.35.4" />
