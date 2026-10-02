@@ -13,13 +13,13 @@ namespace Eveneum.Tests.Infrastructure;
 
 static class CosmosSetup
 {
-    public static CosmosClient GetClientWithNewtonsoftJson(JsonSerializerSettings serializerSettings = null) =>
+    public static CosmosClient GetClientWithNewtonsoftJson(JsonSerializerSettings? serializerSettings = null) =>
         GetClient(new JsonNetCosmosSerializer(Newtonsoft.Json.JsonSerializer.Create(serializerSettings ?? new JsonSerializerSettings())));
 
-    public static CosmosClient GetClientWithSystemTextJson(JsonSerializerOptions serializerOptions = null) =>
+    public static CosmosClient GetClientWithSystemTextJson(JsonSerializerOptions? serializerOptions = null) =>
         GetClient(new SystemTextJsonCosmosSerializer(serializerOptions ?? new JsonSerializerOptions()));
 
-    public static async Task<CosmosClient> GetClientWithNewtonsoftJson(string database, string container = null, JsonSerializerSettings serializerSettings = null)
+    public static async Task<CosmosClient> GetClientWithNewtonsoftJson(string database, string container, JsonSerializerSettings? serializerSettings = null)
     {
         var client = GetClientWithNewtonsoftJson(serializerSettings);
 
@@ -28,7 +28,7 @@ static class CosmosSetup
         return client;
     }
 
-    public static async Task<CosmosClient> GetClientWithSystemTextJson(string database, string container = null, JsonSerializerOptions serializerOptions = null)
+    public static async Task<CosmosClient> GetClientWithSystemTextJson(string database, string container, JsonSerializerOptions? serializerOptions = null)
     {
         var client = GetClientWithSystemTextJson(serializerOptions);
 
@@ -43,7 +43,7 @@ static class CosmosSetup
     public static Task<List<IEveneumDocument>> QueryAllDocumentsInStream(CosmosClient client, string database, string collection, string streamId, DocumentType? documentType = null)
         => Query(client, database, collection, $"SELECT * FROM x", new PartitionKey(streamId), documentType);
 
-    public static string GetEmulatorSetting(string name) =>
+    public static string? GetEmulatorSetting(string name) =>
         Environment.GetEnvironmentVariable(name) ?? Environment.GetEnvironmentVariable(name, EnvironmentVariableTarget.User);
 
     private static CosmosClient GetClient(CosmosSerializer serializer)
