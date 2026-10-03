@@ -1,13 +1,14 @@
-﻿using NodaTime;
+using NodaTime;
 using RandomGen;
 using System;
 using System.Linq;
+using System.Text.Json;
 
 namespace Eveneum.Tests.Infrastructure;
 
 static class TestSetup
 {
-    public static EventData[] GetEvents(int count = 5, int startVersion = 1, string? streamId = null)
+    public static EventData[] GetEvents(JsonSerializerOptions serializerOptions, int count = 5, int startVersion = 1, string? streamId = null)
     {
         streamId = streamId ?? Gen.Random.Text.Words()();
         var numbers = Gen.Random.Numbers.Decimals();
@@ -26,7 +27,7 @@ static class TestSetup
                     Content = strings()
                 }
             })
-            .Select(x => new EventData(streamId, x, GetMetadata(), (ulong)x.Version, numbers().ToString()))
+            .Select(x => new EventData(streamId, x, GetMetadata(), (ulong)x.Version, DateTimeOffset.UtcNow, serializerOptions))
             .ToArray();
     }
 

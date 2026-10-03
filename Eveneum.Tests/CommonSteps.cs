@@ -1,5 +1,4 @@
 ﻿using Eveneum.Tests.Infrastructure;
-using Newtonsoft.Json.Serialization;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
@@ -17,27 +16,11 @@ public class CommonSteps(ScenarioContext scenarioContext, IEnumerable<CosmosDbCo
     {
         foreach (var context in Contexts)
         {
-            switch (context)
+            context.JsonSerializerOptions = new System.Text.Json.JsonSerializerOptions
             {
-                case NewtonsoftCosmosDbContext newtonsoftCosmosDbContext:
-                    var contractResolver = new CamelCasePropertyNamesContractResolver();
-                    if (contractResolver.NamingStrategy is { } namingStrategy)
-                        namingStrategy.OverrideSpecifiedNames = false;
-
-                    newtonsoftCosmosDbContext.JsonSerializerSettings.ContractResolver = contractResolver;
-                    break;
-
-                case SystemTextJsonCosmosDbContext systemTextJsonCosmosDbContext:
-                    systemTextJsonCosmosDbContext.JsonSerializerOptions = new System.Text.Json.JsonSerializerOptions
-                    {
-                        IncludeFields = true,
-                        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
-                    };
-                    break;
-                
-                default:
-                    break;
-            }
+                IncludeFields = true,
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+            };
         }
     }
 
@@ -87,10 +70,9 @@ public class CommonSteps(ScenarioContext scenarioContext, IEnumerable<CosmosDbCo
     [Given("an existing stream {word} with {int} events")]
     public async Task GivenAnExistingStream(string streamId, ushort events)
     {
-        var eventData = TestSetup.GetEvents(events);
-
         await Task.WhenAll(Contexts.Select(async x =>
         {
+            var eventData = x.GetEvents(events);
             x.StreamId = streamId;
 
             await x.EventStore.WriteToStream(streamId, eventData);
@@ -101,10 +83,9 @@ public class CommonSteps(ScenarioContext scenarioContext, IEnumerable<CosmosDbCo
     public async Task GivenAnExistingStreamWithMetadataAndEvents(string streamId, ushort events)
     {
         var metadata = TestSetup.GetMetadata();
-        var eventData = TestSetup.GetEvents(events);
-
         await Task.WhenAll(Contexts.Select(async x =>
         {
+            var eventData = x.GetEvents(events);
             x.StreamId = streamId;
             x.HeaderMetadata = metadata;
 
@@ -115,10 +96,9 @@ public class CommonSteps(ScenarioContext scenarioContext, IEnumerable<CosmosDbCo
     [Given("a deleted stream {word} with {int} events")]
     public async Task GivenADeletedStream(string streamId, ushort events)
     {
-        var eventData = TestSetup.GetEvents(events);
-
         await Task.WhenAll(Contexts.Select(async x =>
         {
+            var eventData = x.GetEvents(events);
             x.StreamId = streamId;
 
             await x.EventStore.WriteToStream(streamId, eventData);

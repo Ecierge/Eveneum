@@ -4,6 +4,8 @@ using Microsoft.Azure.Cosmos;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 
 namespace Eveneum.Tests.Infrastructure;
@@ -28,6 +30,7 @@ public abstract class CosmosDbContext : IDisposable
     }
     public EventStoreOptions EventStoreOptions { get; } = new EventStoreOptions() { QueryMaxItemCount = 100 };
     public virtual BulkDeleteMode BulkDeleteMode { get; } = Eveneum.BulkDeleteMode.StoredProcedure;
+    public abstract JsonSerializerOptions JsonSerializerOptions { get; set; }
 
     public string StreamId
     {
@@ -43,25 +46,48 @@ public abstract class CosmosDbContext : IDisposable
     public List<EventData> LoadAllEvents { get; set; } = [];
     public List<StreamHeader> LoadAllStreamHeaders { get; set; } = [];
     public EventData ReplacedEvent { get; set; }
-    public List<IEveneumDocument> ExistingDocuments { get; set; } = [];
+    public List<EveneumDocument> ExistingDocuments { get; set; } = [];
     public Response? Response { get; set; }
     public Exception? Exception { get; set; }
+
+    public string StreamIdPropertyName => this.JsonSerializerOptions.PropertyNamingPolicy?.ConvertName(nameof(EveneumDocument.StreamId)) ?? nameof(EveneumDocument.StreamId);
 
     public virtual void Dispose()
     {
         this.client?.Dispose();
     }
 
-    public abstract bool AreEqual(object? expected, object? actual);
-
     public abstract Task Initialize();
 
-    protected async Task DeleteAllDocuments<T>()
-        where T : class, IEveneumDocument
+    public static bool IsMissing(object? value) =>
+        value is null || value is JsonElement { ValueKind: JsonValueKind.Undefined or JsonValueKind.Null };
+
+    public bool AreEqual(object? first, object? second)
+    {
+        if (IsMissing(first) && IsMissing(second))
+            return true;
+
+        if (IsMissing(first) != IsMissing(second))
+            return false;
+
+        return JsonNode.DeepEquals(ToJsonNode(first), ToJsonNode(second));
+    }
+
+    public EventData[] GetEvents(int count = 5, int startVersion = 1, string? streamId = null) =>
+        TestSetup.GetEvents(this.JsonSerializerOptions, count, startVersion, streamId);
+
+    private JsonNode? ToJsonNode(object? value) => value switch
+    {
+        JsonNode node => node,
+        JsonElement element => JsonNode.Parse(element.GetRawText()),
+        _ => JsonSerializer.SerializeToNode(value, value?.GetType() ?? typeof(object), this.JsonSerializerOptions)
+    };
+
+    protected async Task DeleteAllDocuments()
     {
         var container = this.Client.GetDatabase(this.Database).GetContainer(this.Container);
 
-        using var query = container.GetItemQueryIterator<T>("SELECT c.id, c.StreamId FROM c");
+        using var query = container.GetItemQueryIterator<EveneumDocument>($"SELECT c.id, c.{this.StreamIdPropertyName} FROM c");
 
         var requestOptions = new ItemRequestOptions
         {

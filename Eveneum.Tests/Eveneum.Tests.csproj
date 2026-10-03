@@ -1,14 +1,14 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk" ToolsVersion="Current">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Eveneum.Tests</AssemblyName>
+    <RootNamespace>Eveneum.Tests</RootNamespace>
     <Nullable>enable</Nullable>
     <WarningsAsErrors>nullable</WarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Microsoft.Azure.Cosmos" />
-    <PackageReference Include="Newtonsoft.Json" />
-    <PackageReference Include="NodaTime.Serialization.JsonNet" />
     <PackageReference Include="NodaTime.Serialization.SystemTextJson" />
     <PackageReference Include="NUnit" />
     <PackageReference Include="NUnit3TestAdapter" />
@@ -24,7 +24,6 @@
     <PackageReference Include="Reqnroll.Microsoft.Extensions.DependencyInjection" />    
     <PackageReference Include="Reqnroll.NUnit" />
     <ProjectReference Include="..\Eveneum\Eveneum.csproj" />
-    <ProjectReference Include="..\Eveneum.NewtonsoftJson\Eveneum.NewtonsoftJson.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Update="Advanced.feature.cs">
@@ -36,9 +35,6 @@
       <DesignTime>True</DesignTime>
       <AutoGen>True</AutoGen>
       <DependentUpon>AppendingToNonExistentStream.feature</DependentUpon>
-    </Compile>
-    <Compile Update="CustomTypeProvider.feature.cs">
-      <DependentUpon>CustomTypeProvider.feature</DependentUpon>
     </Compile>
     <Compile Update="AppendingToStream.feature.cs">
       <DesignTime>True</DesignTime>
@@ -141,12 +137,6 @@
     <SpecFlowFeatureFiles Update="AppendingToNonExistentStream.feature">
       <Generator>SpecFlowSingleFileGenerator</Generator>
       <LastGenOutput>AppendingToNonExistentStream.feature.cs</LastGenOutput>
-    </SpecFlowFeatureFiles>
-    <SpecFlowFeatureFiles Update="CustomTypeProvider.feature">
-      <Visible>$(UsingMicrosoftNETSdk)</Visible>
-      <CodeBehindFile>%(RelativeDir)%(Filename).feature$(DefaultLanguageSourceExtension)</CodeBehindFile>
-      <LastGenOutput>AppendingToStream.feature.cs</LastGenOutput>
-      <Generator>SpecFlowSingleFileGenerator</Generator>
     </SpecFlowFeatureFiles>
     <SpecFlowFeatureFiles Update="AppendingToStream.feature">
       <Generator>SpecFlowSingleFileGenerator</Generator>

@@ -77,12 +77,11 @@ public class AdvancedSteps(IEnumerable<CosmosDbContext> Contexts)
     [When(@"I replace event in version (\d+) in stream (.*)")]
     public async Task WhenIReplaceEventInVersionInStream(ulong version, string streamId)
     {
-        var replacedEvent = TestSetup.GetEvents(1, (int)version, streamId)[0];
-
         await Task.WhenAll(Contexts.Select(async x =>
         {
+            var replacedEvent = x.GetEvents(1, (int)version, streamId)[0];
             x.ReplacedEvent = replacedEvent;
-            var response = await ((IAdvancedEventStore)x.EventStore).ReplaceEvent(replacedEvent);
+            var response = await ((IAdvancedEventStore)x.EventStore).ReplaceEvent(streamId, replacedEvent);
             x.Response = response;
         }));
     }
@@ -128,31 +127,18 @@ public class AdvancedSteps(IEnumerable<CosmosDbContext> Contexts)
     {
         await Task.WhenAll(Contexts.Select(async context =>
         {
-            var typeProvider = context.EventStoreOptions.TypeProvider ?? new PlatformTypeProvider();
             var documents = await CosmosSetup.QueryAllDocumentsInStream(context.Client, context.Database, context.Container, streamId, DocumentType.Event);
             var eventDocument = documents.SingleOrDefault(x => x.Id == EveneumDocumentSerializer.GenerateEventId(streamId, version));
 
             Assert.That(eventDocument, Is.Not.Null);
             Assert.That(eventDocument.DocumentType, Is.EqualTo(DocumentType.Event));
             Assert.That(eventDocument.StreamId, Is.EqualTo(streamId));
-            Assert.That(context.ReplacedEvent.Body, Is.Not.Null);
-            Assert.That(eventDocument.BodyType, Is.EqualTo(typeProvider.GetIdentifierForType(context.ReplacedEvent.Body.GetType())));
-            Assert.That(eventDocument.Body, Is.Not.Null);
+            Assert.That(CosmosDbContext.IsMissing(eventDocument.Body), Is.False);
             Assert.That(context.AreEqual(eventDocument.Body, context.ReplacedEvent.Body), Is.True);
             Assert.That(eventDocument.ETag, Is.Not.Null);
             Assert.That(eventDocument.Deleted, Is.False);
 
-            if (context.ReplacedEvent.Metadata is null)
-            {
-                Assert.That(eventDocument.MetadataType, Is.Null);
-                Assert.That(eventDocument.Metadata, Is.Null);
-            }
-            else
-            {
-                Assert.That(eventDocument.MetadataType, Is.EqualTo(typeProvider.GetIdentifierForType(context.ReplacedEvent.Metadata.GetType())));
-                Assert.That(eventDocument.Metadata, Is.Not.Null);
-                Assert.That(context.AreEqual(eventDocument.Metadata, context.ReplacedEvent.Metadata), Is.True);
-            }
+            Assert.That(context.AreEqual(eventDocument.Metadata, context.ReplacedEvent.Metadata), Is.True);
         }));
     }
 

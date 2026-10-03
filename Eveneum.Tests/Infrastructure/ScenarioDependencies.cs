@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Reqnroll.Microsoft.Extensions.DependencyInjection;
 using System;
 
@@ -11,24 +11,16 @@ static class ScenarioDependencies
     {
         var services = new ServiceCollection();
 
-        services.AddScoped<NewtonsoftCosmosDbContext>();
-        services.AddScoped<NewtonsoftLinuxCosmosDbContext>();
         services.AddScoped<SystemTextJsonCosmosDbContext>();
         services.AddScoped<SystemTextJsonLinuxCosmosDbContext>();
 
         var emulatorOs = CosmosSetup.GetEmulatorSetting("CosmosDbEmulator.OS") ?? "Windows,Linux";
 
         if (emulatorOs.Contains("Windows", StringComparison.OrdinalIgnoreCase))
-        {
-            services.AddScoped<CosmosDbContext>(provider => provider.GetRequiredService<NewtonsoftCosmosDbContext>());
             services.AddScoped<CosmosDbContext>(provider => provider.GetRequiredService<SystemTextJsonCosmosDbContext>());
-        }
 
         if(emulatorOs.Contains("Linux", StringComparison.OrdinalIgnoreCase))
-        {
-            services.AddScoped<CosmosDbContext>(provider => provider.GetRequiredService<NewtonsoftLinuxCosmosDbContext>());
             services.AddScoped<CosmosDbContext>(provider => provider.GetRequiredService<SystemTextJsonLinuxCosmosDbContext>());
-        }
 
         return services;
     }

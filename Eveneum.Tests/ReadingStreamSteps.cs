@@ -59,7 +59,7 @@ public class ReadingStreamSteps(IEnumerable<CosmosDbContext> Contexts)
             Assert.That(context.Stream.HasValue);
             Assert.That(context.Stream.Value.StreamId, Is.EqualTo(streamId));
             Assert.That(context.Stream.Value.Version, Is.EqualTo(version));
-            Assert.That(context.Stream.Value.Metadata, Is.Null);
+            Assert.That(CosmosDbContext.IsMissing(context.Stream.Value.Metadata), Is.True);
         }
     }
 
@@ -94,7 +94,7 @@ public class ReadingStreamSteps(IEnumerable<CosmosDbContext> Contexts)
             Assert.That(context.Stream.Value.Snapshot.HasValue);
             Assert.That(context.Stream.Value.Snapshot.Value.Version, Is.EqualTo(version));
             Assert.That(context.AreEqual(context.Stream.Value.Snapshot.Value.Data, context.Snapshot), Is.True);
-            Assert.That(context.Stream.Value.Snapshot.Value.Metadata, Is.Null);
+            Assert.That(CosmosDbContext.IsMissing(context.Stream.Value.Snapshot.Value.Metadata), Is.True);
         }
     }
 
@@ -107,7 +107,7 @@ public class ReadingStreamSteps(IEnumerable<CosmosDbContext> Contexts)
             Assert.That(context.Stream.Value.Snapshot.HasValue);
             Assert.That(context.Stream.Value.Snapshot.Value.Version, Is.EqualTo(version));
             Assert.That(context.AreEqual(context.Stream.Value.Snapshot.Value.Data, context.Snapshot), Is.True);
-            Assert.That(context.Stream.Value.Snapshot.Value.Metadata, Is.Not.Null);
+            Assert.That(CosmosDbContext.IsMissing(context.Stream.Value.Snapshot.Value.Metadata), Is.False);
             Assert.That(context.AreEqual(context.Stream.Value.Snapshot.Value.Metadata, context.SnapshotMetadata), Is.True);
         }
     }

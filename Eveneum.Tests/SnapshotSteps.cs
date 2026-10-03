@@ -1,3 +1,4 @@
+﻿using Ecierge.Eveneum;
 using Eveneum.Documents;
 using Eveneum.Serialization;
 using Eveneum.Snapshots;
@@ -6,13 +7,14 @@ using NUnit.Framework;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Reqnroll;
 
 namespace Eveneum.Tests;
 
-class CustomSnapshotWriter : ISnapshotWriter
+class CustomSnapshotWriter(JsonSerializerOptions serializerOptions) : ISnapshotWriter
 {
     public static readonly string SnapshotWriterType = typeof(CustomSnapshotWriter).AssemblyQualifiedName
         ?? throw new InvalidOperationException($"Type '{typeof(CustomSnapshotWriter)}' has no assembly-qualified name.");
@@ -23,9 +25,9 @@ class CustomSnapshotWriter : ISnapshotWriter
     public object? Metadata { get; private set; }
     public List<(string StreamId, ulong Version)> DeletedSnapshots { get; } = new();
 
-    public Task<bool> CreateSnapshot(string streamId, ulong version, object snapshot, object? metadata = null, CancellationToken cancellationToken = default)
+    public Task<bool> CreateSnapshot(StreamPartitionKey streamId, ulong version, object snapshot, object? metadata = null, CancellationToken cancellationToken = default)
     {
-        this.StreamId = streamId;
+        this.StreamId = streamId.LogicalStreamId;
         this.Version = version;
         this.Snapshot = snapshot;
         this.Metadata = metadata;
@@ -35,22 +37,25 @@ class CustomSnapshotWriter : ISnapshotWriter
         return Task.FromResult(true);
     }
 
-    public Task DeleteSnapshots(string streamId, ulong olderThanVersion, CancellationToken cancellationToken = default)
+    public Task DeleteSnapshots(StreamPartitionKey streamId, ulong olderThanVersion, CancellationToken cancellationToken = default)
     {
-        this.StreamId = streamId;
+        this.StreamId = streamId.LogicalStreamId;
         this.Version = olderThanVersion;
-        this.DeletedSnapshots.Add((streamId, olderThanVersion));
+        this.DeletedSnapshots.Add((streamId.LogicalStreamId, olderThanVersion));
 
         Console.WriteLine("Custom snapshots deleted for stream {0} in version older than {1}", streamId, olderThanVersion);
 
         return Task.CompletedTask;
     }
 
-    public Task<Snapshot> ReadSnapshot(string streamId, ulong version, CancellationToken cancellationToken = default)
+    public Task<Snapshot> ReadSnapshot(StreamPartitionKey streamId, ulong version, CancellationToken cancellationToken = default)
     {
         Console.WriteLine("Reading custom snapshot for stream {0} in version {1}", streamId, version);
 
-        return Task.FromResult(new Snapshot(this.Snapshot, this.Metadata, this.Version));
+        var data = JsonSerializer.SerializeToElement(this.Snapshot, serializerOptions);
+        var metadata = this.Metadata is null ? default : JsonSerializer.SerializeToElement(this.Metadata, serializerOptions);
+
+        return Task.FromResult(new Snapshot(data, metadata, this.Version));
     }
 }
 
@@ -119,7 +124,7 @@ public class SnapshotSteps(ScenarioContext scenarioContext, IEnumerable<CosmosDb
     public void GivenACustomSnapshotWriter()
     {
         foreach (var context in Contexts)
-            context.EventStoreOptions.SnapshotWriter = new CustomSnapshotWriter();
+            context.EventStoreOptions.SnapshotWriter = new CustomSnapshotWriter(context.JsonSerializerOptions);
     }
 
     [When(@"I create snapshot for stream ([^\s-]) in version (\d+)")]
@@ -191,18 +196,7 @@ public class SnapshotSteps(ScenarioContext scenarioContext, IEnumerable<CosmosDb
             Assert.That(snapshotDocument.Version, Is.EqualTo(version));
             Assert.That(snapshotDocument.SortOrder, Is.EqualTo(version + EveneumDocument.GetOrderingFraction(DocumentType.Snapshot)));
 
-            if (snapshotMetadata is null)
-            {
-                Assert.That(snapshotDocument.MetadataType, Is.Null);
-                Assert.That(snapshotDocument.Metadata, Is.Null);
-            }
-            else
-            {
-                Assert.That(snapshotDocument.MetadataType, Is.EqualTo(snapshotMetadata.GetType().AssemblyQualifiedName));
-                Assert.That(context.AreEqual(snapshotDocument.Metadata, snapshotMetadata), Is.True);
-            }
-
-            Assert.That(snapshotDocument.BodyType, Is.EqualTo(snapshot.GetType().AssemblyQualifiedName));
+            Assert.That(context.AreEqual(snapshotDocument.Metadata, snapshotMetadata), Is.True);
             Assert.That(context.AreEqual(snapshotDocument.Body, snapshot), Is.True);
             Assert.That(snapshotDocument.Deleted, Is.False);
             Assert.That(snapshotDocument.ETag, Is.Not.Null);
@@ -229,10 +223,8 @@ public class SnapshotSteps(ScenarioContext scenarioContext, IEnumerable<CosmosDb
             Assert.That(snapshotDocument.Version, Is.EqualTo(version));
             Assert.That(snapshotDocument.SortOrder, Is.EqualTo(version + EveneumDocument.GetOrderingFraction(DocumentType.Snapshot)));
 
-            Assert.That(snapshotDocument.MetadataType, Is.Null);
-            Assert.That(snapshotDocument.Metadata, Is.Null);
+            Assert.That(CosmosDbContext.IsMissing(snapshotDocument.Metadata), Is.True);
 
-            Assert.That(snapshotDocument.BodyType, Is.EqualTo(PlatformTypeProvider.SnapshotWriterSnapshotTypeIdentifier));
             Assert.That(context.AreEqual(snapshotDocument.Body, snapshot), Is.True);
             Assert.That(snapshotDocument.Deleted, Is.False);
             Assert.That(snapshotDocument.ETag, Is.Not.Null);

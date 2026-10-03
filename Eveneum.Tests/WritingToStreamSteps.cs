@@ -1,4 +1,4 @@
-using Eveneum.Documents;
+﻿using Eveneum.Documents;
 using Eveneum.Serialization;
 using Eveneum.Tests.Infrastructure;
 using NUnit.Framework;
@@ -16,10 +16,9 @@ public class WritingToStreamSteps(ScenarioContext scenarioContext, IEnumerable<C
     [When("I write a new stream {word} with {int} events")]
     public async Task WhenIWriteNewStreamWithEvents(string streamId, int events)
     {
-        var eventsData = TestSetup.GetEvents(events);
-
         await Task.WhenAll(Contexts.Select(async x =>
         {
+            var eventsData = x.GetEvents(events);
             x.StreamId = streamId;
             x.NewEvents = eventsData;
 
@@ -42,10 +41,9 @@ public class WritingToStreamSteps(ScenarioContext scenarioContext, IEnumerable<C
     [When("I append {int} events to stream {word} in expected version {int}")]
     public async Task WhenIAppendEventsToStreamInExpectedVersion(int events, string streamId, ushort expectedVersion)
     {
-        var eventsData = TestSetup.GetEvents(events, expectedVersion + 1);
-
         await Task.WhenAll(Contexts.Select(async x =>
         {
+            var eventsData = x.GetEvents(events, expectedVersion + 1);
             x.StreamId = streamId;
             x.NewEvents = eventsData;
 
@@ -61,10 +59,9 @@ public class WritingToStreamSteps(ScenarioContext scenarioContext, IEnumerable<C
             .Split(',', System.StringSplitOptions.TrimEntries | System.StringSplitOptions.RemoveEmptyEntries)
             .Select(x => Convert.ToUInt16(x));
 
-        var eventsData = eventVersions.SelectMany(x => TestSetup.GetEvents(1, x)).ToArray();
-
         await Task.WhenAll(Contexts.Select(async x =>
         {
+            var eventsData = eventVersions.SelectMany(version => x.GetEvents(1, version)).ToArray();
             x.StreamId = streamId;
             x.NewEvents = eventsData;
 
@@ -80,13 +77,11 @@ public class WritingToStreamSteps(ScenarioContext scenarioContext, IEnumerable<C
             .Split(',', System.StringSplitOptions.TrimEntries | System.StringSplitOptions.RemoveEmptyEntries)
             .Select(x => Convert.ToUInt16(x));
 
-        var allEvents = new List<EventData>(TestSetup.GetEvents(events, expectedVersion + 1));
-        allEvents.AddRange(eventVersions.SelectMany(x => TestSetup.GetEvents(1, x)));
-
-        var eventsData = allEvents.ToArray();
-
         await Task.WhenAll(Contexts.Select(async x =>
         {
+            var allEvents = new List<EventData>(x.GetEvents(events, expectedVersion + 1));
+            allEvents.AddRange(eventVersions.SelectMany(version => x.GetEvents(1, version)));
+            var eventsData = allEvents.ToArray();
             x.StreamId = streamId;
             x.NewEvents = eventsData;
 
@@ -110,8 +105,7 @@ public class WritingToStreamSteps(ScenarioContext scenarioContext, IEnumerable<C
             Assert.That(headerDocument.StreamId, Is.EqualTo(context.StreamId));
             Assert.That(headerDocument.Version, Is.EqualTo(version));
             Assert.That(headerDocument.SortOrder, Is.EqualTo(version + EveneumDocument.GetOrderingFraction(DocumentType.Header)));
-            Assert.That(headerDocument.MetadataType, Is.Null);
-            Assert.That(headerDocument.Metadata, Is.Null);
+            Assert.That(CosmosDbContext.IsMissing(headerDocument.Metadata), Is.True);
             Assert.That(headerDocument.ETag, Is.Not.Null);
             Assert.That(headerDocument.Deleted, Is.False);
         }));
@@ -122,8 +116,6 @@ public class WritingToStreamSteps(ScenarioContext scenarioContext, IEnumerable<C
     {
         await Task.WhenAll(Contexts.Select(async context =>
         {
-            var typeProvider = context.EventStoreOptions.TypeProvider ?? new PlatformTypeProvider();
-
             var headerDocuments = await CosmosSetup.QueryAllDocumentsInStream(context.Client, context.Database, context.Container, context.StreamId, DocumentType.Header);
 
             Assert.That(headerDocuments.Count, Is.EqualTo(1));
@@ -134,8 +126,7 @@ public class WritingToStreamSteps(ScenarioContext scenarioContext, IEnumerable<C
             Assert.That(headerDocument.StreamId, Is.EqualTo(context.StreamId));
             Assert.That(headerDocument.Version, Is.EqualTo(version));
             Assert.That(headerDocument.SortOrder, Is.EqualTo(version + EveneumDocument.GetOrderingFraction(DocumentType.Header)));
-            Assert.That(headerDocument.MetadataType, Is.EqualTo(typeProvider.GetIdentifierForType(typeof(SampleMetadata))));
-            Assert.That(headerDocument.Metadata, Is.Not.Null);
+            Assert.That(CosmosDbContext.IsMissing(headerDocument.Metadata), Is.False);
             Assert.That(context.AreEqual(headerDocument.Metadata, context.HeaderMetadata), Is.True);
             Assert.That(headerDocument.ETag, Is.Not.Null);
             Assert.That(headerDocument.Deleted, Is.False);
@@ -216,8 +207,6 @@ public class WritingToStreamSteps(ScenarioContext scenarioContext, IEnumerable<C
     {
         await Task.WhenAll(Contexts.Select(async context =>
         {
-            var typeProvider = context.EventStoreOptions.TypeProvider ?? new PlatformTypeProvider();
-
             var currentDocuments = await CosmosSetup.QueryAllDocumentsInStream(context.Client, context.Database, context.Container, context.StreamId, DocumentType.Event);
             var existingDocumentIds = context.ExistingDocuments.Select(x => x.Id);
 
@@ -238,12 +227,11 @@ public class WritingToStreamSteps(ScenarioContext scenarioContext, IEnumerable<C
         Assert.That(exception.Version, Is.EqualTo(version));
     }
 
-    private static void VerifyEventDocuments(CosmosDbContext context, List<IEveneumDocument> newEventDocuments, EventData[] newEvents)
+    private static void VerifyEventDocuments(CosmosDbContext context, List<EveneumDocument> newEventDocuments, EventData[] newEvents)
     {
         Assert.That(newEvents.Length, Is.EqualTo(newEventDocuments.Count));
 
         var streamId = context.StreamId;
-        var typeProvider = context.EventStoreOptions.TypeProvider ?? new PlatformTypeProvider();
 
         foreach (var newEvent in newEvents)
         {
@@ -252,24 +240,12 @@ public class WritingToStreamSteps(ScenarioContext scenarioContext, IEnumerable<C
             Assert.That(eventDocument, Is.Not.Null);
             Assert.That(eventDocument.DocumentType, Is.EqualTo(DocumentType.Event));
             Assert.That(eventDocument.StreamId, Is.EqualTo(streamId));
-            Assert.That(newEvent.Body, Is.Not.Null);
-            Assert.That(eventDocument.BodyType, Is.EqualTo(typeProvider.GetIdentifierForType(newEvent.Body.GetType())));
-            Assert.That(eventDocument.Body, Is.Not.Null);
+            Assert.That(CosmosDbContext.IsMissing(eventDocument.Body), Is.False);
             Assert.That(context.AreEqual(eventDocument.Body, newEvent.Body), Is.True);
             Assert.That(eventDocument.ETag, Is.Not.Null);
             Assert.That(eventDocument.Deleted, Is.False);
 
-            if (newEvent.Metadata is null)
-            {
-                Assert.That(eventDocument.MetadataType, Is.Null);
-                Assert.That(eventDocument.Metadata, Is.Null);
-            }
-            else
-            {
-                Assert.That(eventDocument.MetadataType, Is.EqualTo(typeProvider.GetIdentifierForType(newEvent.Metadata.GetType())));
-                Assert.That(eventDocument.Metadata, Is.Not.Null);
-                Assert.That(context.AreEqual(eventDocument.Metadata, newEvent.Metadata), Is.True);
-            }
+            Assert.That(context.AreEqual(eventDocument.Metadata, newEvent.Metadata), Is.True);
         }
     }
 }

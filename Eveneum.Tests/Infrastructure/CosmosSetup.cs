@@ -1,8 +1,6 @@
-﻿using Eveneum.Documents;
-using Eveneum.NewtonsoftJson.Serialization;
+using Eveneum.Documents;
 using Eveneum.Serialization;
 using Microsoft.Azure.Cosmos;
-using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,34 +11,22 @@ namespace Eveneum.Tests.Infrastructure;
 
 static class CosmosSetup
 {
-    public static CosmosClient GetClientWithNewtonsoftJson(JsonSerializerSettings? serializerSettings = null) =>
-        GetClient(new JsonNetCosmosSerializer(Newtonsoft.Json.JsonSerializer.Create(serializerSettings ?? new JsonSerializerSettings())));
-
     public static CosmosClient GetClientWithSystemTextJson(JsonSerializerOptions? serializerOptions = null) =>
         GetClient(new SystemTextJsonCosmosSerializer(serializerOptions ?? new JsonSerializerOptions()));
 
-    public static async Task<CosmosClient> GetClientWithNewtonsoftJson(string database, string container, JsonSerializerSettings? serializerSettings = null)
-    {
-        var client = GetClientWithNewtonsoftJson(serializerSettings);
-
-        await CreateContainer(database, container, client);
-
-        return client;
-    }
-
-    public static async Task<CosmosClient> GetClientWithSystemTextJson(string database, string container, JsonSerializerOptions? serializerOptions = null)
+    public static async Task<CosmosClient> GetClientWithSystemTextJson(string database, string container, string streamIdPropertyName, JsonSerializerOptions? serializerOptions = null)
     {
         var client = GetClientWithSystemTextJson(serializerOptions);
 
-        await CreateContainer(database, container, client);
+        await CreateContainer(database, container, streamIdPropertyName, client);
 
         return client;
     }
 
-    public static Task<List<IEveneumDocument>> QueryAllDocuments(CosmosClient client, string database, string collection)
+    public static Task<List<EveneumDocument>> QueryAllDocuments(CosmosClient client, string database, string collection)
         => Query(client, database, collection, "SELECT * FROM x");
 
-    public static Task<List<IEveneumDocument>> QueryAllDocumentsInStream(CosmosClient client, string database, string collection, string streamId, DocumentType? documentType = null)
+    public static Task<List<EveneumDocument>> QueryAllDocumentsInStream(CosmosClient client, string database, string collection, string streamId, DocumentType? documentType = null)
         => Query(client, database, collection, $"SELECT * FROM x", new PartitionKey(streamId), documentType);
 
     public static string? GetEmulatorSetting(string name) =>
@@ -62,11 +48,11 @@ static class CosmosSetup
         });
     }
 
-    private static async Task<List<IEveneumDocument>> Query(CosmosClient client, string database, string collection, string query, PartitionKey? partitionKey = null, DocumentType? documentType = null)
+    private static async Task<List<EveneumDocument>> Query(CosmosClient client, string database, string collection, string query, PartitionKey? partitionKey = null, DocumentType? documentType = null)
     {
-        using var documentQuery = client.GetDatabase(database).GetContainer(collection).GetItemQueryIterator<IEveneumDocument>(query, requestOptions: new QueryRequestOptions { PartitionKey = partitionKey });
+        using var documentQuery = client.GetDatabase(database).GetContainer(collection).GetItemQueryIterator<EveneumDocument>(query, requestOptions: new QueryRequestOptions { PartitionKey = partitionKey });
 
-        var documents = new List<IEveneumDocument>();
+        var documents = new List<EveneumDocument>();
 
         do
         {
@@ -78,11 +64,11 @@ static class CosmosSetup
         return documents;
     }
 
-    private static async Task CreateContainer(string database, string container, CosmosClient client)
+    private static async Task CreateContainer(string database, string container, string streamIdPropertyName, CosmosClient client)
     {
         await client.CreateDatabaseIfNotExistsAsync(database);
 
-        var containerProperties = new ContainerProperties(container, "/" + nameof(EveneumDocument.StreamId)) { DefaultTimeToLive = -1 };
+        var containerProperties = new ContainerProperties(container, "/" + streamIdPropertyName) { DefaultTimeToLive = -1 };
 
         await client.GetDatabase(database).CreateContainerIfNotExistsAsync(containerProperties);
     }
