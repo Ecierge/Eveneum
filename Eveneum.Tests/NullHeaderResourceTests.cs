@@ -18,8 +18,8 @@ public class NullHeaderResourcePersistence(double requestCharge) : ICosmosPersis
 
     public ICosmosFeedIterator<EveneumDocument> GetItemQueryIterator(QueryDefinition queryDefinition, int? maxItemCount = null) => throw new NotSupportedException();
 
-    public Task<CosmosItemResponse<EveneumDocument>> ReadItemAsync(string id, PartitionKey partitionKey, CancellationToken cancellationToken = default)
-        => Task.FromResult(new CosmosItemResponse<EveneumDocument>(null!, requestCharge));
+    public Task<CosmosItemResponse<EveneumDocument?>> ReadItemAsync(string id, PartitionKey partitionKey, CancellationToken cancellationToken = default)
+        => Task.FromResult(new CosmosItemResponse<EveneumDocument?>(null, requestCharge));
 
     public TransactionalBatch CreateTransactionalBatch(PartitionKey partitionKey) => throw new NotSupportedException();
 

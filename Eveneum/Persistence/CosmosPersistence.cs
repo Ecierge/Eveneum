@@ -141,14 +141,14 @@ public class CosmosPersistence : ICosmosPersistence
         return new CosmosFeedIterator<EveneumDocument, EveneumDocument>(Container.GetItemQueryIterator<EveneumDocument>(queryDefinition, requestOptions: requestOptions));
     }
 
-    public virtual async Task<CosmosItemResponse<EveneumDocument>> ReadItemAsync(string id, PartitionKey partitionKey, CancellationToken cancellationToken = default)
+    public virtual async Task<CosmosItemResponse<EveneumDocument?>> ReadItemAsync(string id, PartitionKey partitionKey, CancellationToken cancellationToken = default)
     {
         var result = await Container.ReadItemAsync<EveneumDocument>(
             id,
             partitionKey,
             cancellationToken: cancellationToken);
 
-        return new CosmosItemResponse<EveneumDocument>(result.Resource, result.RequestCharge);
+        return new CosmosItemResponse<EveneumDocument?>(result.Resource, result.RequestCharge);
     }
 
     public Task<DeleteResponse> DeleteItems(StreamPartitionKey streamId, string query, bool softDelete, int? ttl, byte batchSize, int? maxItemCount = null, CancellationToken cancellationToken = default) =>
