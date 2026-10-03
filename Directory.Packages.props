@@ -5,29 +5,35 @@
     <HostDirectoryPackagesProps>$([MSBuild]::GetPathOfFileAbove('Directory.Packages.props', '$(MSBuildThisFileDirectory)../'))</HostDirectoryPackagesProps>
   </PropertyGroup>
   <Import Project="$(HostDirectoryPackagesProps)" Condition="'$(HostDirectoryPackagesProps)' != ''" />
-  <ItemGroup Condition="'$(HostDirectoryPackagesProps)' == ''">
+  <ItemGroup>
     <!-- Azure -->
-    <PackageVersion Include="Microsoft.ApplicationInsights" Version="2.23.0" />
-    <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.35.4" />
+    <EveneumPackageVersion Include="Microsoft.ApplicationInsights" Version="2.23.0" />
+    <EveneumPackageVersion Include="Microsoft.Azure.Cosmos" Version="3.35.4" />
     <!-- Build -->
-    <PackageVersion Include="Microsoft.Web.LibraryManager.Build" Version="3.0.114" />
+    <EveneumPackageVersion Include="Microsoft.Web.LibraryManager.Build" Version="3.0.114" />
     <!-- JSON Serialization -->
-    <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageVersion Include="NodaTime.Serialization.JsonNet" Version="3.3.0" />
-    <PackageVersion Include="NodaTime.Serialization.SystemTextJson" Version="1.4.0" />
-    <PackageVersion Include="Reqnroll.Microsoft.Extensions.DependencyInjection" Version="3.3.4" />
-    <PackageVersion Include="Reqnroll.NUnit" Version="3.3.4" />
-    <PackageVersion Include="Reqnroll.xUnit" Version="3.3.4" />
-    <PackageVersion Include="System.Text.Json" Version="8.0.6" />
+    <EveneumPackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
+    <EveneumPackageVersion Include="NodaTime.Serialization.JsonNet" Version="3.3.0" />
+    <EveneumPackageVersion Include="NodaTime.Serialization.SystemTextJson" Version="1.4.0" />
+    <EveneumPackageVersion Include="Reqnroll.Microsoft.Extensions.DependencyInjection" Version="3.3.4" />
+    <EveneumPackageVersion Include="Reqnroll.NUnit" Version="3.3.4" />
+    <EveneumPackageVersion Include="Reqnroll.xUnit" Version="3.3.4" />
+    <EveneumPackageVersion Include="System.Text.Json" Version="8.0.6" />
     <!-- Testing -->
-    <PackageVersion Include="coverlet.collector" Version="10.0.1" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
-    <PackageVersion Include="NUnit" Version="4.6.1" />
-    <PackageVersion Include="NUnit3TestAdapter" Version="6.3.0" />
-    <PackageVersion Include="NUnit.Analyzers" Version="4.15.0" />
-    <PackageVersion Include="RandomGen" Version="1.1.6" />
-    <PackageVersion Include="SpecFlow" Version="3.9.74" />
-    <PackageVersion Include="SpecFlow.NUnit.Runners" Version="3.9.74" />
-    <PackageVersion Include="SpecFlow.Tools.MsBuild.Generation" Version="3.9.74" />
+    <EveneumPackageVersion Include="coverlet.collector" Version="10.0.1" />
+    <EveneumPackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <EveneumPackageVersion Include="NUnit" Version="4.6.1" />
+    <EveneumPackageVersion Include="NUnit3TestAdapter" Version="6.3.0" />
+    <EveneumPackageVersion Include="NUnit.Analyzers" Version="4.15.0" />
+    <EveneumPackageVersion Include="RandomGen" Version="1.1.6" />
+    <EveneumPackageVersion Include="SpecFlow" Version="3.9.74" />
+    <EveneumPackageVersion Include="SpecFlow.NUnit.Runners" Version="3.9.74" />
+    <EveneumPackageVersion Include="SpecFlow.Tools.MsBuild.Generation" Version="3.9.74" />
+  </ItemGroup>
+  <!-- The host's versions win; Eveneum's own fill in the packages the host does not pin -->
+  <ItemGroup>
+    <EveneumPackageVersion Remove="@(PackageVersion)" />
+    <PackageVersion Include="@(EveneumPackageVersion)" />
+    <PackageVersion Remove="NETStandard.Library" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
   </ItemGroup>
 </Project>
