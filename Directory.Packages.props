@@ -8,7 +8,7 @@
   <ItemGroup>
     <!-- Azure -->
     <EveneumPackageVersion Include="Microsoft.ApplicationInsights" Version="2.23.0" />
-    <EveneumPackageVersion Include="Microsoft.Azure.Cosmos" Version="3.35.4" />
+    <EveneumPackageVersion Include="Microsoft.Azure.Cosmos" Version="3.63.2" />
     <!-- Build -->
     <EveneumPackageVersion Include="Microsoft.Web.LibraryManager.Build" Version="3.0.114" />
     <!-- JSON Serialization -->
