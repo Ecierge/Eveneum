@@ -18,7 +18,7 @@
     <EveneumPackageVersion Include="Reqnroll.Microsoft.Extensions.DependencyInjection" Version="3.3.4" />
     <EveneumPackageVersion Include="Reqnroll.NUnit" Version="3.3.4" />
     <EveneumPackageVersion Include="Reqnroll.xUnit" Version="3.3.4" />
-    <EveneumPackageVersion Include="System.Text.Json" Version="8.0.6" />
+    <EveneumPackageVersion Include="System.Text.Json" Version="10.0.13" />
     <!-- Testing -->
     <EveneumPackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.11.2" />
     <EveneumPackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="2.4.1" />
