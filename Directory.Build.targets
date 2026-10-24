@@ -6,6 +6,14 @@
 
   <Import Project="$(_EveneumParentDirectoryBuildTargets)" Condition="'$(_EveneumParentDirectoryBuildTargets)' != ''" />
 
+  <!--
+    The library does not use Newtonsoft.Json and the documents are serialized with System.Text.Json, but newer versions of
+    Microsoft.Azure.Cosmos fail the build of a project that does not reference it. The host repository disables the same check.
+  -->
+  <PropertyGroup>
+    <AzureCosmosDisableNewtonsoftJsonCheck>true</AzureCosmosDisableNewtonsoftJsonCheck>
+  </PropertyGroup>
+
   <PropertyGroup>
     <_EveneumDotnetToolManifestFile>$(MSBuildThisFileDirectory).config/dotnet-tools.json</_EveneumDotnetToolManifestFile>
     <_EveneumDotnetToolRestoreOutputFile>$(MSBuildThisFileDirectory)obj/dotnet-tool-restore-$(NETCoreSdkVersion)-$(OS)</_EveneumDotnetToolRestoreOutputFile>
